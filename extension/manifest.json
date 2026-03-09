@@ -2,10 +2,11 @@
   "manifest_version": 3,
   "name": "AutoScout24 Price Analyser",
   "version": "1.0",
-  "description": "Flags over/underpriced cars on AutoScout24 NL using a local ML model.",
+  "description": "Instantly see if a used car on AutoScout24 is fairly priced, overpriced, or a great deal.",
   "permissions": ["scripting"],
   "host_permissions": [
     "https://www.autoscout24.nl/*",
+    "https://web-production-870f.up.railway.app/*",
     "http://localhost:8000/*"
   ],
   "content_scripts": [
