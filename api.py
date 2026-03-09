@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -176,6 +177,56 @@ class CarBatchItem(BaseModel):
     colour:        Optional[str] = None
     seller_type:   Optional[str] = None
     actual_price:  Optional[int] = None
+
+
+# ── Privacy policy ────────────────────────────────────────────────────────────
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — AutoScout24 Price Analyser</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           max-width: 680px; margin: 60px auto; padding: 0 24px;
+           color: #1a1a1a; line-height: 1.7; }
+    h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.1rem; margin-top: 2rem; }
+    p, ul { margin: 0.5rem 0; }
+    ul { padding-left: 1.4rem; }
+    a { color: #e84118; }
+    .updated { color: #888; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="updated">AutoScout24 Price Analyser &mdash; last updated March 2026</p>
+
+  <h2>What data is collected</h2>
+  <p>The extension reads car listing data (make, model, year, mileage, fuel type,
+  transmission, power, and asking price) directly from AutoScout24 pages you visit.
+  This data is sent to our prediction API solely to calculate an estimated market value.</p>
+  <p>We do <strong>not</strong> collect:</p>
+  <ul>
+    <li>Any personally identifiable information</li>
+    <li>Your browsing history</li>
+    <li>Any data unrelated to the car listings on the current page</li>
+  </ul>
+
+  <h2>How data is used</h2>
+  <p>Car listing data is sent to this API to generate a price prediction. The data is used
+  only to produce the prediction shown to you and is not stored, logged, or shared.</p>
+
+  <h2>Third parties</h2>
+  <p>No data is shared with any third party. The prediction API is operated by the extension developer.</p>
+
+  <h2>Contact</h2>
+  <p>Questions? Open an issue at
+  <a href="https://github.com/qwillemse/autoscout-analyser">github.com/qwillemse/autoscout-analyser</a>.</p>
+</body>
+</html>"""
 
 
 # ── Stats endpoint ────────────────────────────────────────────────────────────
