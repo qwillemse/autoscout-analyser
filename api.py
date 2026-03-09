@@ -1,10 +1,11 @@
 import sqlite3
+import os
 from datetime import datetime
 
 import joblib
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -175,6 +176,27 @@ class CarBatchItem(BaseModel):
     colour:        Optional[str] = None
     seller_type:   Optional[str] = None
     actual_price:  Optional[int] = None
+
+
+# ── Temporary upload endpoint (remove after initial data upload) ──────────────
+ALLOWED_FILES = {"pipeline.joblib", "cars.db"}
+
+@app.post("/admin/upload/{filename}")
+async def upload_file(filename: str, request: Request, key: str):
+    admin_key = os.environ.get("ADMIN_KEY", "")
+    if not admin_key or key != admin_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if filename not in ALLOWED_FILES:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    data = await request.body()
+    dest = "/data/" + filename
+    os.makedirs("/data", exist_ok=True)
+    with open(dest, "wb") as f:
+        f.write(data)
+    global _pipeline
+    if filename == "pipeline.joblib":
+        _pipeline = None  # force reload on next predict call
+    return {"status": "ok", "bytes": len(data)}
 
 
 # ── Stats endpoint ────────────────────────────────────────────────────────────
