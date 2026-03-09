@@ -211,7 +211,7 @@ def predict_batch(request: Request, cars: list[CarBatchItem]):
         "fuel":          car.fuel,
         "transmission":  car.transmission,
         "body_type":     car.body_type     or "Unknown",
-        "colour":        car.colour        or "Unknown",
+        # "colour" excluded until model is retrained with colour data
         "seller_type":   car.seller_type   or "Unknown",
     } for car in cars])
 
@@ -244,7 +244,7 @@ def predict(request: Request, car: CarInput):
         "fuel":          car.fuel,
         "transmission":  car.transmission,
         "body_type":     car.body_type     or "Unknown",
-        "colour":        car.colour        or "Unknown",
+        # "colour" excluded until model is retrained with colour data
         "seller_type":   car.seller_type   or "Unknown",
     }])
 
