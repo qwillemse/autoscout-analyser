@@ -18,7 +18,18 @@ CURRENT_YEAR   = datetime.now().year
 THRESHOLD_PCT  = 15.0  # diff % beyond which a car is flagged over/underpriced
 
 # ── Load model once at startup ────────────────────────────────────────────────
-pipeline = joblib.load(MODEL_PATH)
+# Loads lazily so the app starts cleanly even before pipeline.joblib is uploaded
+import os as _os
+_pipeline = None
+
+def get_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        if not _os.path.exists(MODEL_PATH):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail="Model not loaded yet — upload pipeline.joblib to /data/")
+        _pipeline = joblib.load(MODEL_PATH)
+    return _pipeline
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/hour"])
@@ -200,7 +211,7 @@ def predict_batch(request: Request, cars: list[CarBatchItem]):
         "seller_type":   car.seller_type   or "Unknown",
     } for car in cars])
 
-    predicted_prices = np.expm1(pipeline.predict(features)).astype(int)
+    predicted_prices = np.expm1(get_pipeline().predict(features)).astype(int)
 
     results = []
     for car, predicted_price in zip(cars, predicted_prices):
@@ -233,7 +244,7 @@ def predict(request: Request, car: CarInput):
         "seller_type":   car.seller_type   or "Unknown",
     }])
 
-    predicted_price = int(np.expm1(pipeline.predict(features)[0]))
+    predicted_price = int(np.expm1(get_pipeline().predict(features)[0]))
     confidence = get_confidence(car.trim_id, car.make, car.model, car.year, car.mileage,
                                fuel=car.fuel, power_kw=car.power_kw)
 
