@@ -180,10 +180,13 @@ class CarBatchItem(BaseModel):
 # ── Stats endpoint ────────────────────────────────────────────────────────────
 @app.get("/stats")
 def stats():
-    con = sqlite3.connect(DB_PATH)
-    count = con.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
-    con.close()
-    return {"listing_count": count}
+    try:
+        con = sqlite3.connect(DB_PATH)
+        count = con.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
+        con.close()
+        return {"listing_count": count, "status": "ok"}
+    except Exception:
+        return {"listing_count": 0, "status": "db_not_loaded"}
 
 
 # ── Batch predict endpoint ────────────────────────────────────────────────────
