@@ -1,6 +1,5 @@
 // ── API endpoint ───────────────────────────────────────────────────────────────
-// Change this to your hosted URL before publishing (e.g. "https://your-app.railway.app")
-const API_URL = "http://localhost:8000";
+const API_URL = "https://web-production-870f.up.railway.app";
 
 // ── Extract car data from __NEXT_DATA__ ───────────────────────────────────────
 function extractCarData() {
