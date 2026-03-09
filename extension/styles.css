@@ -1,0 +1,199 @@
+#as24-analyser-sidebar {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 260px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  z-index: 99999;
+  overflow: hidden;
+}
+
+.as24-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.as24-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #111827;
+}
+
+.as24-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 14px;
+  padding: 0;
+  line-height: 1;
+}
+
+.as24-close:hover {
+  color: #111827;
+}
+
+.as24-verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 15px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.as24-verdict-icon {
+  font-size: 18px;
+}
+
+.as24-rows {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.as24-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.as24-label {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.as24-value {
+  font-weight: 600;
+  color: #111827;
+  font-size: 13px;
+}
+
+.as24-meta {
+  padding: 10px 16px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.6;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.as24-footer {
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.as24-error {
+  padding: 16px;
+  color: #6b7280;
+  font-size: 13px;
+  text-align: center;
+}
+
+.as24-warning {
+  padding: 10px 16px;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ── Search result badge ───────────────────────────────────────────────────── */
+.as24-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 14px;
+  margin-top: 6px;
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+  z-index: 100;
+  pointer-events: none;
+  min-width: 110px;
+  text-align: center;
+}
+
+.as24-badge-absolute {
+  position: absolute;
+  top: 60px;
+  right: 8px;
+}
+
+.as24-badge-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.as24-badge-price {
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
+}
+
+.as24-badge-diff {
+  font-size: 11px;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* ── Confidence ────────────────────────────────────────────────────────────── */
+.as24-confidence {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-weight: 600;
+}
+.as24-confidence-sub {
+  font-size: 10px;
+  font-weight: 400;
+  color: #9ca3af;
+}
+.as24-confidence--high   { color: #16a34a; }
+.as24-confidence--medium { color: #d97706; }
+.as24-confidence--low    { color: #dc2626; }
+
+/* ── Verdict colour variants ───────────────────────────────────────────────── */
+.as24-badge--green {
+  border-color: #16a34a;
+  background: #f0fdf4;
+}
+.as24-badge--green .as24-badge-diff {
+  color: #16a34a;
+}
+
+.as24-badge--red {
+  border-color: #dc2626;
+  background: #fff5f5;
+}
+.as24-badge--red .as24-badge-diff {
+  color: #dc2626;
+}
+
+.as24-badge--blue {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+.as24-badge--blue .as24-badge-diff {
+  color: #2563eb;
+}

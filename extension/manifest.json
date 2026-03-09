@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "AutoScout24 Price Analyser",
+  "version": "1.0",
+  "description": "Flags over/underpriced cars on AutoScout24 NL using a local ML model.",
+  "permissions": ["scripting"],
+  "host_permissions": [
+    "https://www.autoscout24.nl/*",
+    "http://localhost:8000/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://www.autoscout24.nl/lst*"],
+      "js": ["injected.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://www.autoscout24.nl/aanbod/*", "https://www.autoscout24.nl/auto/*", "https://www.autoscout24.nl/lst*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["injected.js"],
+      "matches": ["https://www.autoscout24.nl/*"]
+    }
+  ]
+}

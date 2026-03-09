@@ -1,0 +1,19 @@
+# Data & model — too large for git, upload to Railway volume manually
+cars.db
+listings.db
+pipeline.joblib
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db

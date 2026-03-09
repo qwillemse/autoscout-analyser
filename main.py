@@ -1,0 +1,67 @@
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from config import MAKES, YEAR_BANDS
+from db import init_db, save, purge_stale
+from scraper import scrape_page
+from train import retrain
+
+# AutoScout24 caps at 200 pages per search query. The scraper also breaks
+# naturally when a page returns no listings, so this is a hard ceiling.
+PAGES_PER_BAND = 200
+MAX_WORKERS    = 5    # parallel make-scrapers; be polite to the server
+
+
+def scrape_make(make: str, max_pages: int = PAGES_PER_BAND) -> list[dict]:
+    """Scrape all year bands for one make. Returns a flat list of listings."""
+    all_listings = []
+    for year_from, year_to in YEAR_BANDS:
+        band_label = (str(year_from) if year_from == year_to
+                      else f"{year_from or '≤'}-{year_to or '≥'}")
+        for page in range(1, max_pages + 1):
+            listings = scrape_page(make, page, year_from=year_from, year_to=year_to)
+            if not listings:
+                break
+            all_listings.extend(listings)
+            print(f"  {make} [{band_label}] p{page}: {len(listings)} listings")
+            time.sleep(1.5)
+    return all_listings
+
+
+def scrape_all(con, max_pages: int = PAGES_PER_BAND):
+    """Scrape all makes in parallel, save to DB as results come in."""
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(scrape_make, make, max_pages): make for make in MAKES}
+        for future in as_completed(futures):
+            make = futures[future]
+            try:
+                listings = future.result()
+                if listings:
+                    save(con, listings)
+                    print(f"✓ {make}: {len(listings)} saved")
+                else:
+                    print(f"✗ {make}: 0 listings")
+            except Exception as exc:
+                print(f"✗ {make}: error – {exc}")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--scrape", action="store_true", help="Scrape and purge only, no retraining")
+    parser.add_argument("--train",  action="store_true", help="Retrain only, no scraping")
+    parser.add_argument("--pages",  type=int, default=PAGES_PER_BAND, help="Max pages per year band per make")
+    args = parser.parse_args()
+
+    if args.train:
+        retrain()
+    elif args.scrape:
+        con = init_db()
+        scrape_all(con, args.pages)
+        purge_stale(con)
+    else:
+        con = init_db()
+        scrape_all(con, args.pages)
+        purge_stale(con)
+        retrain()
+
