@@ -281,7 +281,7 @@ function extractSearchListings(preferSPA = false) {
 }
 
 // ── Inject badge into a search result card ────────────────────────────────────
-function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence) {
+function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence, carData) {
   const link = document.querySelector(`a[href*="${id}"]`);
   if (!link) return;
   const card = link.closest("article") ?? link.closest("[data-testid]") ?? link.parentElement;
@@ -297,7 +297,11 @@ function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence) {
                      : RED_COLORS.has(fvColor)   ? "as24-badge--red"
                      :                              "as24-badge--blue";
 
-  const isLowConf = confidence?.level === "low";
+  // Flag as uncertain if low confidence OR outside training range
+  const isLowConf    = confidence?.level === "low";
+  const isOutOfRange = carData ? !!getOutOfRangeWarning(carData) : false;
+  const isUncertain  = isLowConf || isOutOfRange;
+
   const sign  = diff_pct > 0 ? "+" : "";
   const label = diff_pct !== undefined && diff_pct !== null
     ? `${sign}${diff_pct.toFixed(1)}%`
@@ -307,8 +311,11 @@ function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence) {
   const vergelijken = card.querySelector('[class*="compare"], [class*="Compare"], [class*="checkbox"], input[type="checkbox"]');
   const topRight = vergelijken?.closest("div") ?? vergelijken?.parentElement;
 
-  const lowConfClass = isLowConf ? " as24-badge--low-confidence" : "";
-  const lowConfIcon  = isLowConf ? `<span class="as24-badge-warn" title="Low confidence — few similar cars in database">⚠️</span>` : "";
+  const warnTitle = isLowConf && isOutOfRange ? "Low confidence & outside training range"
+                  : isLowConf                 ? "Low confidence — few similar cars in database"
+                  :                             "Outside model training range — prediction may be less accurate";
+  const lowConfClass = isUncertain ? " as24-badge--low-confidence" : "";
+  const lowConfIcon  = isUncertain ? `<span class="as24-badge-warn" title="${warnTitle}">⚠️</span>` : "";
   const html = `
     <span class="as24-badge-label">Market value${lowConfIcon}</span>
     <span class="as24-badge-price">${fmt(predicted_price)}</span>
@@ -351,7 +358,7 @@ async function main(isSPA = false) {
       // Cache batch results + listing data so detail pages can reuse them
       const listingMap = Object.fromEntries(listings.map(l => [l.id, l]));
       for (const result of results) {
-        injectBadge(result.id, result.predicted_price, result.diff_pct, result.final_verdict, result.confidence);
+        injectBadge(result.id, result.predicted_price, result.diff_pct, result.final_verdict, result.confidence, listingMap[result.id]);
         try {
           sessionStorage.setItem(`as24_${result.id}`, JSON.stringify({
             carData: listingMap[result.id],
