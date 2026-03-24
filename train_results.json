@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-03-24T22:12:01.395797",
+  "rows": 264505,
+  "features": [
+    "car_age",
+    "mileage",
+    "power_kw",
+    "range_km",
+    "mileage_per_year",
+    "is_electric",
+    "is_hybrid",
+    "make",
+    "model",
+    "trim_id",
+    "variant_id",
+    "generation_id",
+    "fuel",
+    "transmission",
+    "seller_type"
+  ],
+  "mae_mean": 2156,
+  "mae_std": 18,
+  "mape_mean": 10.42,
+  "mape_std": 0.24,
+  "median_price": 21950
+}

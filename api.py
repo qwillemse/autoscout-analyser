@@ -16,8 +16,7 @@ from slowapi.errors import RateLimitExceeded
 
 from config import DB_PATH, MODEL_PATH
 
-CURRENT_YEAR   = datetime.now().year
-THRESHOLD_PCT  = 15.0  # diff % beyond which a car is flagged over/underpriced
+CURRENT_YEAR = datetime.now().year
 
 # ── Load model once at startup ────────────────────────────────────────────────
 # Loads lazily so the app starts cleanly even before pipeline.joblib is uploaded
@@ -80,7 +79,7 @@ def get_confidence(trim_id: Optional[str], make: str, model: str,
             rows = con.execute(
                 f"SELECT price FROM listings WHERE {where}"
                 f" AND year BETWEEN ? AND ? AND mileage BETWEEN ? AND ?",
-                params + (year - yw, year + yw, mileage - mw, mileage + mw)
+                params + (year - yw, year + yw, max(0, mileage - mw), mileage + mw)
             ).fetchall()
             if len(rows) >= MIN_SAMPLES:
                 return [r[0] for r in rows]
@@ -159,6 +158,29 @@ def compute_final_verdict(diff_pct: float, confidence: dict) -> dict:
         elif snr > 1.0: return {"label": "Likely overpriced",    "color": "#ea580c"}
         elif snr > 0.5: return {"label": "Possibly overpriced",  "color": "#f97316"}
         else:            return {"label": "Fair price",           "color": "#2563eb"}
+
+
+# ── Feature builder (must match train.py features exactly) ────────────────────
+def _build_features(car) -> dict:
+    """Build feature dict matching the model's expected columns."""
+    car_age = CURRENT_YEAR - car.year
+    return {
+        "car_age":         car_age,
+        "mileage":         car.mileage,
+        "power_kw":        car.power_kw,
+        "range_km":        car.range_km,
+        "mileage_per_year": car.mileage / max(1, car_age),
+        "is_electric":     int(car.fuel == "Elektrisch"),
+        "is_hybrid":       int("Elektro/" in (car.fuel or "")),
+        "make":            car.make,
+        "model":           car.model,
+        "trim_id":         car.trim_id       or "Unknown",
+        "variant_id":      car.variant_id    or "Unknown",
+        "generation_id":   car.generation_id or "Unknown",
+        "fuel":            car.fuel,
+        "transmission":    car.transmission,
+        "seller_type":     car.seller_type   or "Unknown",
+    }
 
 
 # ── Request schemas ───────────────────────────────────────────────────────────
@@ -269,22 +291,7 @@ def predict_batch(request: Request, cars: list[CarBatchItem]):
         return []
 
     # Single predict call for all cars at once — much faster than looping
-    features = pd.DataFrame([{
-        "car_age":      CURRENT_YEAR - car.year,
-        "mileage":      car.mileage,
-        "power_kw":     car.power_kw,
-        "range_km":     car.range_km,
-        "make":         car.make,
-        "model":        car.model,
-        "trim_id":       car.trim_id       or "Unknown",
-        "variant_id":    car.variant_id    or "Unknown",
-        "generation_id": car.generation_id or "Unknown",
-        "fuel":          car.fuel,
-        "transmission":  car.transmission,
-        "body_type":     car.body_type     or "Unknown",
-        # "colour" excluded until model is retrained with colour data
-        "seller_type":   car.seller_type   or "Unknown",
-    } for car in cars])
+    features = pd.DataFrame([_build_features(car) for car in cars])
 
     predicted_prices = np.expm1(get_pipeline().predict(features)).astype(int)
 
@@ -307,22 +314,7 @@ def predict_batch(request: Request, cars: list[CarBatchItem]):
 @app.post("/predict")
 @limiter.limit("60/minute")
 def predict(request: Request, car: CarInput):
-    features = pd.DataFrame([{
-        "car_age":      CURRENT_YEAR - car.year,
-        "mileage":      car.mileage,
-        "power_kw":     car.power_kw,
-        "range_km":     car.range_km,
-        "make":         car.make,
-        "model":        car.model,
-        "trim_id":       car.trim_id       or "Unknown",
-        "variant_id":    car.variant_id    or "Unknown",
-        "generation_id": car.generation_id or "Unknown",
-        "fuel":          car.fuel,
-        "transmission":  car.transmission,
-        "body_type":     car.body_type     or "Unknown",
-        # "colour" excluded until model is retrained with colour data
-        "seller_type":   car.seller_type   or "Unknown",
-    }])
+    features = pd.DataFrame([_build_features(car)])
 
     predicted_price = int(np.expm1(get_pipeline().predict(features)[0]))
     confidence = get_confidence(car.trim_id, car.make, car.model, car.year, car.mileage,
@@ -338,14 +330,13 @@ def predict(request: Request, car: CarInput):
         response["actual_price"] = car.actual_price
         response["diff_pct"]     = round(diff_pct, 1)
         response["diff_eur"]     = car.actual_price - predicted_price
-
-        if diff_pct > THRESHOLD_PCT:
+        # Simple verdict for backwards compatibility
+        if diff_pct > 15:
             response["verdict"] = "overpriced"
-        elif diff_pct < -THRESHOLD_PCT:
+        elif diff_pct < -15:
             response["verdict"] = "underpriced"
         else:
             response["verdict"] = "fair"
-
         response["final_verdict"] = compute_final_verdict(diff_pct, confidence)
 
     return response
