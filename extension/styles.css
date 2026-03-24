@@ -81,6 +81,33 @@
   font-size: 13px;
 }
 
+/* ── Detailed analysis button ─────────────────────────────────────────────── */
+.as24-detail-btn-wrap {
+  padding: 8px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.as24-detail-btn {
+  width: 100%;
+  padding: 7px 12px;
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+.as24-detail-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+.as24-detail-btn:disabled {
+  color: #9ca3af;
+  cursor: default;
+}
+
 .as24-meta {
   padding: 10px 16px;
   color: #6b7280;

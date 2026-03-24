@@ -141,6 +141,26 @@ def get_confidence(trim_id: Optional[str], make: str, model: str,
     }
 
 
+# ── Verdict helper ───────────────────────────────────────────────────────────
+def compute_final_verdict(diff_pct: float, confidence: dict) -> dict:
+    """SNR-based verdict used by both /predict and /predict/batch."""
+    spread = confidence.get("spread_pct") or 40  # None → conservative fallback
+    snr = abs(diff_pct) / spread if spread > 0 else 0
+
+    if abs(diff_pct) < 5:
+        return {"label": "Fair price", "color": "#2563eb"}
+    elif diff_pct < 0:  # underpriced signal
+        if   snr > 2.0: return {"label": "Great deal",           "color": "#16a34a"}
+        elif snr > 1.0: return {"label": "Likely underpriced",   "color": "#65a30d"}
+        elif snr > 0.5: return {"label": "Possibly underpriced", "color": "#84cc16"}
+        else:            return {"label": "Fair price",           "color": "#2563eb"}
+    else:               # overpriced signal
+        if   snr > 2.0: return {"label": "Overpriced",           "color": "#dc2626"}
+        elif snr > 1.0: return {"label": "Likely overpriced",    "color": "#ea580c"}
+        elif snr > 0.5: return {"label": "Possibly overpriced",  "color": "#f97316"}
+        else:            return {"label": "Fair price",           "color": "#2563eb"}
+
+
 # ── Request schemas ───────────────────────────────────────────────────────────
 class CarInput(BaseModel):
     make: str
@@ -274,6 +294,11 @@ def predict_batch(request: Request, cars: list[CarBatchItem]):
         if car.actual_price:
             diff_pct = (car.actual_price - predicted_price) / predicted_price * 100
             result["diff_pct"] = round(float(diff_pct), 1)
+            confidence = get_confidence(car.trim_id, car.make, car.model,
+                                        car.year, car.mileage,
+                                        fuel=car.fuel, power_kw=car.power_kw)
+            result["confidence"]    = confidence
+            result["final_verdict"] = compute_final_verdict(diff_pct, confidence)
         results.append(result)
     return results
 
@@ -321,30 +346,6 @@ def predict(request: Request, car: CarInput):
         else:
             response["verdict"] = "fair"
 
-        # Combined final verdict using signal-to-noise ratio:
-        # snr = |diff_pct| / spread_pct
-        # A car at -80% with ±44% noise (snr=1.8) beats -16% with ±40% noise (snr=0.4)
-        #
-        # When spread_pct is None we have < MIN_SAMPLES comparable cars — low data
-        # means HIGH uncertainty, so use a large conservative fallback (not 20%).
-        # A high fallback → lower SNR → softer/more hedged verdicts, which is correct.
-        spread = confidence.get("spread_pct") or 40  # None → conservative fallback
-        snr = abs(diff_pct) / spread if spread > 0 else 0
-
-        if abs(diff_pct) < 5:
-            # Trivially small gap — always fair regardless of noise
-            fv_label, fv_color = "Fair price", "#2563eb"
-        elif diff_pct < 0:  # underpriced signal
-            if   snr > 2.0: fv_label, fv_color = "Great deal",          "#16a34a"
-            elif snr > 1.0: fv_label, fv_color = "Likely underpriced",  "#65a30d"
-            elif snr > 0.5: fv_label, fv_color = "Possibly underpriced","#84cc16"
-            else:            fv_label, fv_color = "Fair price",          "#2563eb"
-        else:               # overpriced signal
-            if   snr > 2.0: fv_label, fv_color = "Overpriced",          "#dc2626"
-            elif snr > 1.0: fv_label, fv_color = "Likely overpriced",   "#ea580c"
-            elif snr > 0.5: fv_label, fv_color = "Possibly overpriced", "#f97316"
-            else:            fv_label, fv_color = "Fair price",          "#2563eb"
-
-        response["final_verdict"] = {"label": fv_label, "color": fv_color}
+        response["final_verdict"] = compute_final_verdict(diff_pct, confidence)
 
     return response

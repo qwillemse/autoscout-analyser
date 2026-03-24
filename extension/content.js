@@ -34,23 +34,27 @@ function extractCarData() {
     const colour      = vehicle.colour         ?? null;
     const seller_type = listing.seller?.type   ?? null;
 
+    let power_kw_parsed = null;
     let range_km = null;
     for (const detail of listing.vehicleDetails ?? []) {
-      if (detail.ariaLabel === "actieradius") {
+      if (detail.ariaLabel === "Vermogen kW (PK)") {
+        const match = detail.data?.match(/^(\d+)\s*kW/);
+        if (match) power_kw_parsed = parseInt(match[1], 10);
+      } else if (detail.ariaLabel === "actieradius") {
         const match = detail.data?.match(/^(\d+)/);
         if (match) range_km = parseInt(match[1], 10);
-        break;
       }
     }
 
     return {
+      listing_id:   listing.id ?? null,
       make:         vehicle.make,
       model:        vehicle.model,
       year,
       mileage,
-      fuel:         vehicle.fuelCategory?.formatted ?? "Unknown",
-      transmission: vehicle.transmissionType        ?? "Unknown",
-      power_kw:     vehicle.rawPowerInKw ?? null,
+      fuel:         vehicle.fuel         ?? vehicle.fuelCategory?.formatted ?? "Unknown",
+      transmission: vehicle.transmission ?? vehicle.transmissionType        ?? "Unknown",
+      power_kw:     vehicle.rawPowerInKw ?? power_kw_parsed,
       range_km,
       trim_id,
       variant_id,
@@ -83,10 +87,11 @@ document.addEventListener("__as24_spa_listings__", (e) => {
 
 // ── Call local API ─────────────────────────────────────────────────────────────
 async function fetchPrediction(carData) {
+  const { listing_id, ...payload } = carData;
   const res = await fetch(`${API_URL}/predict`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify(carData),
+    body:    JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
@@ -102,7 +107,7 @@ function getOutOfRangeWarning(carData) {
 }
 
 // ── Build sidebar ──────────────────────────────────────────────────────────────
-function buildSidebar(carData, result, stats) {
+function buildSidebar(carData, result, stats, detailCarData) {
   const { predicted_price, actual_price, diff_pct, diff_eur, verdict, confidence, final_verdict } = result;
 
   const verdictConfig = {
@@ -116,7 +121,10 @@ function buildSidebar(carData, result, stats) {
   const fmt   = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
   const sign  = diff_eur > 0 ? "+" : "-";
 
-  const warnings = getOutOfRangeWarning(carData);
+  // Use detailCarData for display metadata (richer info on the detail page)
+  const displayData = detailCarData ?? carData;
+
+  const warnings = getOutOfRangeWarning(displayData);
   const warningHtml = warnings ? `
     <div class="as24-warning">
       ⚠️ Outside training range — prediction may be less accurate:<br>
@@ -158,10 +166,13 @@ function buildSidebar(carData, result, stats) {
         </div>`;
       })() : ""}
     </div>
+    ${detailCarData ? `<div class="as24-detail-btn-wrap">
+      <button class="as24-detail-btn" id="as24-detail-btn">Detailed analysis</button>
+    </div>` : ""}
     <div class="as24-meta">
-      <div>${carData.make} ${carData.model} · ${carData.year}</div>
-      <div>${carData.mileage.toLocaleString("nl-NL")} km${carData.power_kw ? ` · ${carData.power_kw} kW` : ""}</div>
-      <div>${carData.fuel} · ${carData.transmission}</div>
+      <div>${displayData.make} ${displayData.model} · ${displayData.year}</div>
+      <div>${displayData.mileage.toLocaleString("nl-NL")} km${displayData.power_kw ? ` · ${displayData.power_kw} kW` : ""}</div>
+      <div>${displayData.fuel} · ${displayData.transmission}</div>
     </div>
     <div class="as24-footer">Based on ${stats ? stats.listing_count.toLocaleString("nl-NL") : "~12k"} NL listings</div>
   `;
@@ -171,6 +182,23 @@ function buildSidebar(carData, result, stats) {
   document.getElementById("as24-close-btn").addEventListener("click", () => {
     sidebar.remove();
   });
+
+  // "Detailed analysis" button — calls /predict with richer detail-page data
+  const detailBtn = document.getElementById("as24-detail-btn");
+  if (detailBtn && detailCarData) {
+    detailBtn.addEventListener("click", async () => {
+      detailBtn.textContent = "Analysing...";
+      detailBtn.disabled = true;
+      try {
+        const detailResult = await fetchPrediction(detailCarData);
+        document.getElementById("as24-analyser-sidebar")?.remove();
+        buildSidebar(detailCarData, detailResult, stats, null);
+      } catch {
+        detailBtn.textContent = "Failed — try again";
+        detailBtn.disabled = false;
+      }
+    });
+  }
 }
 
 function buildErrorSidebar(message) {
@@ -254,7 +282,7 @@ function extractSearchListings(preferSPA = false) {
 }
 
 // ── Inject badge into a search result card ────────────────────────────────────
-function injectBadge(id, predicted_price, diff_pct) {
+function injectBadge(id, predicted_price, diff_pct, final_verdict) {
   const link = document.querySelector(`a[href*="${id}"]`);
   if (!link) return;
   const card = link.closest("article") ?? link.closest("[data-testid]") ?? link.parentElement;
@@ -262,19 +290,13 @@ function injectBadge(id, predicted_price, diff_pct) {
 
   const fmt = (n) => "€" + n.toLocaleString("nl-NL");
 
-  // Derive verdict from diff_pct (same 15 % threshold as the API)
-  const THRESHOLD = 15;
-  let verdict = "fair";
-  if (diff_pct !== undefined && diff_pct !== null) {
-    if (diff_pct < -THRESHOLD) verdict = "underpriced";
-    else if (diff_pct > THRESHOLD) verdict = "overpriced";
-  }
-
-  const verdictClass = {
-    underpriced: "as24-badge--green",
-    overpriced:  "as24-badge--red",
-    fair:        "as24-badge--blue",
-  }[verdict];
+  // Map final_verdict color to badge CSS class (green/red/blue)
+  const GREEN_COLORS = new Set(["#16a34a", "#65a30d", "#84cc16"]);
+  const RED_COLORS   = new Set(["#dc2626", "#ea580c", "#f97316"]);
+  const fvColor = final_verdict?.color;
+  const verdictClass = GREEN_COLORS.has(fvColor) ? "as24-badge--green"
+                     : RED_COLORS.has(fvColor)   ? "as24-badge--red"
+                     :                              "as24-badge--blue";
 
   const sign  = diff_pct > 0 ? "+" : "";
   const label = diff_pct !== undefined && diff_pct !== null
@@ -323,8 +345,17 @@ async function main(isSPA = false) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(listings),
       }).then(r => r.json());
+
+      // Cache batch results + listing data so detail pages can reuse them
+      const listingMap = Object.fromEntries(listings.map(l => [l.id, l]));
       for (const result of results) {
-        injectBadge(result.id, result.predicted_price, result.diff_pct);
+        injectBadge(result.id, result.predicted_price, result.diff_pct, result.final_verdict);
+        try {
+          sessionStorage.setItem(`as24_${result.id}`, JSON.stringify({
+            carData: listingMap[result.id],
+            result,
+          }));
+        } catch {}
       }
     } catch (e) {
       console.error("[AutoAnalyser] Batch predict failed:", e);
@@ -335,8 +366,23 @@ async function main(isSPA = false) {
   // Listing detail page
   if (document.getElementById("as24-analyser-sidebar")) return;
 
-  const carData = extractCarData();
-  if (!carData) {
+  // Always extract detail-page data for display metadata and for the
+  // "Detailed analysis" button.
+  const detailCarData = extractCarData();
+
+  // Use the listing ID from __NEXT_DATA__ (UUID) to look up the cached
+  // batch result that was stored on the search page.
+  const listingId = detailCarData?.listing_id ?? null;
+
+  let cached = null;
+  if (listingId) {
+    try {
+      const raw = sessionStorage.getItem(`as24_${listingId}`);
+      if (raw) cached = JSON.parse(raw);
+    } catch {}
+  }
+
+  if (!cached && !detailCarData) {
     buildErrorSidebar("Could not extract car data from this page.");
     return;
   }
@@ -344,12 +390,50 @@ async function main(isSPA = false) {
   buildErrorSidebar("Analysing...");
 
   try {
-    const [result, stats] = await Promise.all([
-      fetchPrediction(carData),
-      fetch(`${API_URL}/stats`).then(r => r.json()).catch(() => null),
-    ]);
+    let carData, result, stats;
+
+    if (cached) {
+      // Use the same prediction the badge showed
+      carData = cached.carData;
+      const batch = cached.result;
+      result = {
+        predicted_price: batch.predicted_price,
+        actual_price:    carData.actual_price,
+        diff_pct:        batch.diff_pct,
+        diff_eur:        carData.actual_price - batch.predicted_price,
+        verdict:         batch.diff_pct > 15 ? "overpriced" : batch.diff_pct < -15 ? "underpriced" : "fair",
+        confidence:      batch.confidence ?? null,
+        final_verdict:   batch.final_verdict,
+      };
+      stats = await fetch(`${API_URL}/stats`).then(r => r.json()).catch(() => null);
+    } else {
+      // Direct navigation — no cached data, call /predict/batch with detail-page data
+      carData = detailCarData;
+      const { listing_id: _lid, ...carDataForApi } = carData;
+      const batchItem = { ...carDataForApi, id: listingId ?? "detail" };
+      const [batchResults, statsRes] = await Promise.all([
+        fetch(`${API_URL}/predict/batch`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify([batchItem]),
+        }).then(r => r.json()),
+        fetch(`${API_URL}/stats`).then(r => r.json()).catch(() => null),
+      ]);
+      const batch = batchResults[0];
+      result = {
+        predicted_price: batch.predicted_price,
+        actual_price:    carData.actual_price,
+        diff_pct:        batch.diff_pct,
+        diff_eur:        carData.actual_price - batch.predicted_price,
+        verdict:         batch.diff_pct > 15 ? "overpriced" : batch.diff_pct < -15 ? "underpriced" : "fair",
+        confidence:      batch.confidence ?? null,
+        final_verdict:   batch.final_verdict,
+      };
+      stats = statsRes;
+    }
+
     document.getElementById("as24-analyser-sidebar")?.remove();
-    buildSidebar(carData, result, stats);
+    buildSidebar(carData, result, stats, detailCarData);
   } catch (e) {
     document.getElementById("as24-analyser-sidebar")?.remove();
     buildErrorSidebar("Could not reach the API. Please try again later.");
