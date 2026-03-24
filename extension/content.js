@@ -131,6 +131,18 @@ function buildSidebar(carData, result, stats, detailCarData) {
       ${warnings.join("<br>")}
     </div>` : "";
 
+  // Low-confidence warning (separate from out-of-range)
+  let lowConfHtml = "";
+  if (confidence?.level === "low") {
+    const reason = confidence.sample_count < 10
+      ? `Only ${confidence.sample_count} similar car${confidence.sample_count === 1 ? "" : "s"} in our database.`
+      : `Prices for similar cars vary widely (±${confidence.spread_pct}%).`;
+    lowConfHtml = `
+      <div class="as24-warning">
+        ⚠️ Low confidence — ${reason} Take this estimate with caution.
+      </div>`;
+  }
+
   const sidebar = document.createElement("div");
   sidebar.id = "as24-analyser-sidebar";
   sidebar.innerHTML = `
@@ -139,6 +151,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
       <button class="as24-close" id="as24-close-btn">✕</button>
     </div>
     ${warningHtml}
+    ${lowConfHtml}
     <div class="as24-verdict" style="background:${v.bg}; color:${fv.color};">
       <span class="as24-verdict-label">${fv.label}</span>
     </div>
@@ -167,7 +180,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
       })() : ""}
     </div>
     ${detailCarData ? `<div class="as24-detail-btn-wrap">
-      <button class="as24-detail-btn" id="as24-detail-btn">Detailed analysis</button>
+      <button class="as24-detail-btn as24-detail-btn--disabled" id="as24-detail-btn" title="Coming soon: more accurate prediction using description, equipment, and images" disabled>Detailed analysis — coming soon</button>
     </div>` : ""}
     <div class="as24-meta">
       <div>${displayData.make} ${displayData.model} · ${displayData.year}</div>
@@ -183,22 +196,8 @@ function buildSidebar(carData, result, stats, detailCarData) {
     sidebar.remove();
   });
 
-  // "Detailed analysis" button — calls /predict with richer detail-page data
-  const detailBtn = document.getElementById("as24-detail-btn");
-  if (detailBtn && detailCarData) {
-    detailBtn.addEventListener("click", async () => {
-      detailBtn.textContent = "Analysing...";
-      detailBtn.disabled = true;
-      try {
-        const detailResult = await fetchPrediction(detailCarData);
-        document.getElementById("as24-analyser-sidebar")?.remove();
-        buildSidebar(detailCarData, detailResult, stats, null);
-      } catch {
-        detailBtn.textContent = "Failed — try again";
-        detailBtn.disabled = false;
-      }
-    });
-  }
+  // "Detailed analysis" button — placeholder for future premium feature
+  // (description parsing, equipment, images, etc.)
 }
 
 function buildErrorSidebar(message) {
@@ -282,7 +281,7 @@ function extractSearchListings(preferSPA = false) {
 }
 
 // ── Inject badge into a search result card ────────────────────────────────────
-function injectBadge(id, predicted_price, diff_pct, final_verdict) {
+function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence) {
   const link = document.querySelector(`a[href*="${id}"]`);
   if (!link) return;
   const card = link.closest("article") ?? link.closest("[data-testid]") ?? link.parentElement;
@@ -298,6 +297,7 @@ function injectBadge(id, predicted_price, diff_pct, final_verdict) {
                      : RED_COLORS.has(fvColor)   ? "as24-badge--red"
                      :                              "as24-badge--blue";
 
+  const isLowConf = confidence?.level === "low";
   const sign  = diff_pct > 0 ? "+" : "";
   const label = diff_pct !== undefined && diff_pct !== null
     ? `${sign}${diff_pct.toFixed(1)}%`
@@ -307,21 +307,23 @@ function injectBadge(id, predicted_price, diff_pct, final_verdict) {
   const vergelijken = card.querySelector('[class*="compare"], [class*="Compare"], [class*="checkbox"], input[type="checkbox"]');
   const topRight = vergelijken?.closest("div") ?? vergelijken?.parentElement;
 
+  const lowConfClass = isLowConf ? " as24-badge--low-confidence" : "";
+  const lowConfIcon  = isLowConf ? `<span class="as24-badge-warn" title="Low confidence — few similar cars in database">⚠️</span>` : "";
   const html = `
-    <span class="as24-badge-label">Market value</span>
+    <span class="as24-badge-label">Market value${lowConfIcon}</span>
     <span class="as24-badge-price">${fmt(predicted_price)}</span>
     <span class="as24-badge-diff">${label}</span>
   `;
 
   if (topRight) {
     const badge = document.createElement("div");
-    badge.className = `as24-badge ${verdictClass}`;
+    badge.className = `as24-badge ${verdictClass}${lowConfClass}`;
     badge.innerHTML = html;
     topRight.insertAdjacentElement("afterend", badge);
   } else {
     if (window.getComputedStyle(card).position === "static") card.style.position = "relative";
     const badge = document.createElement("div");
-    badge.className = `as24-badge as24-badge-absolute ${verdictClass}`;
+    badge.className = `as24-badge as24-badge-absolute ${verdictClass}${lowConfClass}`;
     badge.innerHTML = html;
     card.appendChild(badge);
   }
@@ -349,7 +351,7 @@ async function main(isSPA = false) {
       // Cache batch results + listing data so detail pages can reuse them
       const listingMap = Object.fromEntries(listings.map(l => [l.id, l]));
       for (const result of results) {
-        injectBadge(result.id, result.predicted_price, result.diff_pct, result.final_verdict);
+        injectBadge(result.id, result.predicted_price, result.diff_pct, result.final_verdict, result.confidence);
         try {
           sessionStorage.setItem(`as24_${result.id}`, JSON.stringify({
             carData: listingMap[result.id],

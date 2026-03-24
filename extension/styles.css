@@ -106,6 +106,9 @@
 .as24-detail-btn:disabled {
   color: #9ca3af;
   cursor: default;
+  font-style: italic;
+  background: #f9fafb;
+  border-style: dashed;
 }
 
 .as24-meta {
@@ -223,4 +226,15 @@
 }
 .as24-badge--blue .as24-badge-diff {
   color: #2563eb;
+}
+
+/* ── Low-confidence badge indicator ──────────────────────────────────────── */
+.as24-badge--low-confidence {
+  opacity: 0.65;
+  border-style: dashed;
+}
+.as24-badge-warn {
+  font-size: 11px;
+  margin-left: 3px;
+  cursor: help;
 }
