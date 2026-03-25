@@ -9,7 +9,7 @@ async function isPremium() {
   } catch { return false; }
 }
 
-// ── Extract extra detail-page data (description, equipment, photos) ───────────
+// ── Extract extra detail-page data (description, equipment, photos, etc.) ─────
 function extractDetailExtras() {
   try {
     const script = document.getElementById("__NEXT_DATA__");
@@ -20,18 +20,44 @@ function extractDetailExtras() {
     // Description text
     const description = listing.description ?? null;
 
-    // Equipment list
+    // Equipment list (try multiple structures AutoScout24 uses)
     const equipment = [];
-    for (const section of listing.equipments ?? []) {
-      for (const item of section.equipments ?? section.items ?? []) {
-        if (item.label || item.name) equipment.push(item.label ?? item.name);
+    for (const section of listing.equipments ?? listing.equipment ?? []) {
+      for (const item of section.equipments ?? section.items ?? section.equipment ?? [item]) {
+        const label = item?.label ?? item?.name ?? (typeof item === "string" ? item : null);
+        if (label) equipment.push(label);
       }
     }
 
     // Photo count
     const photoCount = listing.images?.length ?? null;
 
-    return { description, equipment: equipment.length ? equipment : null, photo_count: photoCount };
+    // Seller info
+    const sellerRating = listing.seller?.rating ?? null;
+    const sellerType   = listing.seller?.type ?? null;
+
+    // Vehicle details (APK date, previous owners, etc.)
+    let apkDate = null;
+    let previousOwners = null;
+    for (const detail of listing.vehicleDetails ?? []) {
+      const label = detail.ariaLabel ?? detail.label ?? "";
+      const val   = detail.data ?? detail.value ?? "";
+      if (label.toLowerCase().includes("apk")) apkDate = val;
+      if (label.toLowerCase().includes("eigenaar") || label.toLowerCase().includes("owner")) {
+        const match = val.match(/\d+/);
+        if (match) previousOwners = parseInt(match[0], 10);
+      }
+    }
+
+    return {
+      description,
+      equipment:       equipment.length ? equipment : null,
+      photo_count:     photoCount,
+      seller_rating:   sellerRating,
+      seller_type:     sellerType,
+      apk_date:        apkDate,
+      previous_owners: previousOwners,
+    };
   } catch {
     return {};
   }
@@ -278,24 +304,30 @@ function buildSidebar(carData, result, stats, detailCarData) {
           .catch(() => { wrap.innerHTML = ""; });
       }
 
-      // 2. Fetch price history
+      // 2. Fetch market trend for similar cars
       const histWrap = document.getElementById("as24-price-history-wrap");
-      const lid = detailCarData?.listing_id;
-      if (histWrap && lid) {
-        fetch(`${API_URL}/price-history/${lid}`)
+      if (histWrap) {
+        fetch(`${API_URL}/market-trend`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            make:  displayData.make,
+            model: displayData.model,
+            year:  displayData.year,
+          }),
+        })
           .then(r => r.json())
           .then(data => {
-            if (!data.history || data.history.length < 2) return;
-            const first = data.history[0];
-            const last  = data.history[data.history.length - 1];
-            const diff  = last.price - first.price;
+            if (!data.trend || data.trend.length < 2) return;
+            const first = data.trend[0];
+            const last  = data.trend[data.trend.length - 1];
+            const diff  = last.avg_price - first.avg_price;
             if (diff === 0) return;
             const fmt = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
             const arrow = diff < 0 ? "↓" : "↑";
             const color = diff < 0 ? "#16a34a" : "#dc2626";
-            const firstDate = new Date(first.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
             histWrap.innerHTML = `<div class="as24-price-history">
-              <span style="color:${color}">${arrow} Price ${diff < 0 ? "dropped" : "increased"} ${fmt(diff)} since ${firstDate}</span>
+              <span style="color:${color}">${arrow} Similar ${displayData.make} ${displayData.model} avg. ${diff < 0 ? "dropped" : "rose"} ${fmt(diff)} (${last.count} listed)</span>
             </div>`;
           })
           .catch(() => {});
@@ -312,23 +344,35 @@ function buildSidebar(carData, result, stats, detailCarData) {
           detailBtn.disabled = true;
           try {
             const extras = extractDetailExtras();
-            const { listing_id, ...carPayload } = detailCarData;
             const res = await fetch(`${API_URL}/predict/detailed`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ ...carPayload, ...extras }),
+              body: JSON.stringify({
+                make:            displayData.make,
+                model:           displayData.model,
+                year:            displayData.year,
+                mileage:         displayData.mileage,
+                fuel:            displayData.fuel,
+                transmission:    displayData.transmission,
+                power_kw:        displayData.power_kw ?? null,
+                predicted_price: predicted_price,
+                actual_price:    actual_price,
+                ...extras,
+              }),
             });
             const detail = await res.json();
 
             // Update sidebar in-place with adjusted prediction
+            const adjDiffEur = actual_price - detail.predicted_price;
+            const adjDiffPct = detail.diff_pct ?? ((adjDiffEur / detail.predicted_price) * 100);
             document.getElementById("as24-analyser-sidebar")?.remove();
             const adjustedResult = {
               predicted_price: detail.predicted_price,
-              actual_price:    carData.actual_price,
-              diff_pct:        detail.diff_pct,
-              diff_eur:        detail.diff_eur ?? (carData.actual_price - detail.predicted_price),
-              confidence:      detail.confidence ?? confidence,
-              final_verdict:   detail.final_verdict ?? final_verdict,
+              actual_price:    actual_price,
+              diff_pct:        Math.round(adjDiffPct * 10) / 10,
+              diff_eur:        adjDiffEur,
+              confidence:      confidence,
+              final_verdict:   final_verdict,
             };
             buildSidebar(carData, adjustedResult, stats, null);
 

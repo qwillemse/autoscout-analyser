@@ -442,28 +442,19 @@ class DetailedInput(BaseModel):
     mileage: int
     fuel: str
     transmission: str
-    power_kw:      Optional[int] = None
-    range_km:      Optional[int] = None
-    trim_id:       Optional[str] = None
-    variant_id:    Optional[str] = None
-    generation_id: Optional[str] = None
-    body_type:     Optional[str] = None
-    colour:        Optional[str] = None
-    seller_type:   Optional[str] = None
-    actual_price:  Optional[int] = None
-    description:   Optional[str] = None
-    equipment:     Optional[List[str]] = None
-    photo_count:   Optional[int] = None
+    power_kw:        Optional[int] = None
+    predicted_price: int                     # base prediction already computed
+    actual_price:    Optional[int] = None
+    description:     Optional[str] = None
+    equipment:       Optional[List[str]] = None
+    photo_count:     Optional[int] = None
 
 @app.post("/predict/detailed")
 @limiter.limit("10/minute")
 def predict_detailed(request: Request, car: DetailedInput):
-    # Step 1: Base prediction from XGBoost (same as /predict)
-    pipeline = get_pipeline()
-    features = pd.DataFrame([_build_features(car)])
-    base_price = int(pipeline.predict(features)[0])
+    base_price = car.predicted_price
 
-    # Step 2: Ask LLM for adjustment based on description + equipment
+    # Ask LLM for adjustment based on description + equipment
     adjustment_pct = 0
     explanation = ""
 
@@ -525,37 +516,34 @@ Respond with ONLY a JSON object, no other text:
         result["diff_pct"]     = round(diff_pct, 1)
         result["diff_eur"]     = car.actual_price - adjusted_price
 
-        confidence = get_confidence(car.trim_id, car.make, car.model,
-                                    car.year, car.mileage,
-                                    fuel=car.fuel, power_kw=car.power_kw)
-        result["confidence"]    = confidence
-        result["final_verdict"] = compute_final_verdict(diff_pct, confidence)
-
     return result
 
 
 # ── Price history endpoint (premium) ─────────────────────────────────────────
-@app.get("/price-history/{listing_id}")
+class MarketTrendInput(BaseModel):
+    make: str
+    model: str
+    year: int
+
+@app.post("/market-trend")
 @limiter.limit("30/minute")
-def price_history(request: Request, listing_id: str):
+def market_trend(request: Request, car: MarketTrendInput):
+    """Average price trend for similar cars (same make/model, ±2 years)."""
     try:
         con = sqlite3.connect(DB_PATH)
-        # Get history records
-        rows = con.execute(
-            "SELECT price, scraped_at FROM price_history WHERE listing_id = ? ORDER BY scraped_at",
-            (listing_id,),
-        ).fetchall()
-        # Also get current price
-        current = con.execute(
-            "SELECT price, scraped_at FROM listings WHERE id = ?",
-            (listing_id,),
-        ).fetchone()
+        rows = con.execute("""
+            SELECT
+                strftime('%Y-%m', scraped_at) AS month,
+                AVG(price) AS avg_price,
+                COUNT(*) AS count
+            FROM listings
+            WHERE make = ? AND model = ? AND year BETWEEN ? AND ?
+            GROUP BY month
+            ORDER BY month
+        """, (car.make, car.model, car.year - 2, car.year + 2)).fetchall()
         con.close()
     except Exception:
-        return {"history": [], "current": None}
+        return {"trend": []}
 
-    history = [{"price": r[0], "date": r[1]} for r in rows]
-    if current:
-        history.append({"price": current[0], "date": current[1]})
-
-    return {"history": history, "listing_id": listing_id}
+    trend = [{"month": r[0], "avg_price": int(r[1]), "count": r[2]} for r in rows if r[0]]
+    return {"trend": trend, "make": car.make, "model": car.model}
