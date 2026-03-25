@@ -392,13 +392,13 @@ def explain(request: Request, data: ExplainInput):
     mileage_per_year = round(data.mileage / max(car_age, 1))
     avg_mileage_per_year = 15_000  # rough NL average
 
-    # Fetch average price for this make/model from DB for context
+    # Fetch average price for similar-year cars of same make/model
     avg_price = None
     try:
         con = sqlite3.connect(DB_PATH)
         row = con.execute(
-            "SELECT AVG(price), COUNT(*) FROM listings WHERE make = ? AND model = ?",
-            (data.make, data.model),
+            "SELECT AVG(price), COUNT(*) FROM listings WHERE make = ? AND model = ? AND year BETWEEN ? AND ?",
+            (data.make, data.model, data.year - 2, data.year + 2),
         ).fetchone()
         con.close()
         if row and row[1] > 5:
@@ -434,7 +434,7 @@ Pricing:
 - Our model predicts this car is worth: €{data.predicted_price:,}
 - The seller is asking: €{data.actual_price:,}
 - Difference: {data.diff_pct:+.1f}% ({"seller asks less than predicted" if data.diff_pct < 0 else "seller asks more than predicted"})
-{f"- Average {data.make} {data.model} in our database: €{avg_price:,}" if avg_price else ""}
+{f"- Average {data.make} {data.model} ({data.year-2}–{data.year+2}) in our database: €{avg_price:,}" if avg_price else ""}
 
 Prediction confidence: {data.confidence_level or "unknown"}{f" (±{data.spread_pct}%, based on {data.sample_count} similar cars)" if data.sample_count else ""}
 {listing_details}

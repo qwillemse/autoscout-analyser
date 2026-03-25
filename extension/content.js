@@ -374,15 +374,18 @@ function buildSidebar(carData, result, stats, detailCarData) {
             const detail = await res.json();
             const fmt = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
 
-            // Update prediction numbers in-place
-            const rows = sidebar.querySelectorAll(".as24-row");
-            if (rows[0]) rows[0].querySelector(".as24-value").textContent = fmt(detail.predicted_price);
-            const adjDiffEur = actual_price - detail.predicted_price;
-            const adjDiffPct = detail.diff_pct ?? Math.round((adjDiffEur / detail.predicted_price) * 1000) / 10;
-            const adjSign2 = adjDiffEur >= 0 ? "+" : "-";
-            if (rows[2]) {
-              const diffVal = rows[2].querySelector(".as24-value");
-              diffVal.textContent = `${adjSign2}${fmt(adjDiffEur)} (${adjDiffPct > 0 ? "+" : ""}${Math.round(adjDiffPct * 10) / 10}%)`;
+            // Update prediction numbers in-place (use getElementById for safety)
+            const sidebarEl = document.getElementById("as24-analyser-sidebar");
+            if (sidebarEl) {
+              const rows = sidebarEl.querySelectorAll(".as24-row");
+              if (rows[0]) rows[0].querySelector(".as24-value").textContent = fmt(detail.predicted_price);
+              const adjDiffEur = actual_price - detail.predicted_price;
+              const adjDiffPct = detail.diff_pct ?? Math.round((adjDiffEur / detail.predicted_price) * 1000) / 10;
+              const adjSign2 = adjDiffEur >= 0 ? "+" : "-";
+              if (rows[2]) {
+                const diffVal = rows[2].querySelector(".as24-value");
+                diffVal.textContent = `${adjSign2}${fmt(adjDiffEur)} (${adjDiffPct > 0 ? "+" : ""}${Math.round(adjDiffPct * 10) / 10}%)`;
+              }
             }
 
             // Update explanation in-place
