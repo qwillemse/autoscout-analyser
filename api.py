@@ -568,3 +568,81 @@ def market_trend(request: Request, car: MarketTrendInput):
 
     trend = [{"month": r[0], "avg_price": int(r[1]), "count": r[2]} for r in rows if r[0]]
     return {"trend": trend, "make": car.make, "model": car.model}
+
+
+# ── Similar cars endpoint ─────────────────────────────────────────────────────
+class SimilarCarsInput(BaseModel):
+    make: str
+    model: str
+    year: int
+    mileage: int
+    actual_price: int
+    listing_id: Optional[str] = None
+
+@app.post("/similar-cars")
+@limiter.limit("30/minute")
+def similar_cars(request: Request, car: SimilarCarsInput):
+    """Find similar listings and rank this car among them."""
+    try:
+        con = sqlite3.connect(DB_PATH)
+        rows = con.execute("""
+            SELECT id, price, year, mileage, fuel, location
+            FROM listings
+            WHERE make = ? AND model = ? AND year BETWEEN ? AND ?
+            ORDER BY price ASC
+        """, (car.make, car.model, car.year - 2, car.year + 2)).fetchall()
+        con.close()
+    except Exception:
+        return {"similar": [], "rank": None, "total": 0}
+
+    if not rows:
+        return {"similar": [], "rank": None, "total": 0}
+
+    # Predict prices for all similar cars to compute diff_pct
+    similar = []
+    for r in rows:
+        lid, price, year, mileage, fuel, location = r
+        similar.append({
+            "id": str(lid),
+            "price": price,
+            "year": year,
+            "mileage": mileage,
+            "fuel": fuel or "",
+            "location": location or "",
+            "url": f"https://www.autoscout24.nl/aanbod/-/-{lid}",
+        })
+
+    # Compute value score (price relative to predicted) using simple heuristic:
+    # lower price + lower mileage = better deal
+    # Sort by price/mileage ratio as a rough "deal score"
+    for s in similar:
+        # Simple deal score: how cheap relative to mileage
+        s["deal_score"] = s["price"] / max(s["mileage"], 1) * 1000
+
+    similar.sort(key=lambda s: s["deal_score"])
+
+    # Find rank of current listing
+    rank = None
+    total = len(similar)
+    for i, s in enumerate(similar):
+        if car.listing_id and s["id"] == car.listing_id:
+            rank = i + 1
+            break
+    # If listing not in DB, estimate rank by price
+    if rank is None:
+        current_score = car.actual_price / max(car.mileage, 1) * 1000
+        rank = sum(1 for s in similar if s["deal_score"] < current_score) + 1
+
+    # Return top 3 best deals (excluding current listing)
+    best_deals = [s for s in similar if s.get("id") != car.listing_id][:3]
+
+    # Add diff_pct (vs median price of similar cars)
+    median_price = sorted([s["price"] for s in similar])[len(similar) // 2]
+    for s in best_deals:
+        s["diff_pct"] = round((s["price"] - median_price) / median_price * 100, 1)
+
+    return {
+        "similar": best_deals,
+        "rank": rank,
+        "total": total,
+    }
