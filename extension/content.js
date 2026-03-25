@@ -1,6 +1,42 @@
 // ── API endpoint ───────────────────────────────────────────────────────────────
 const API_URL = "https://web-production-870f.up.railway.app";
 
+// ── Premium check ─────────────────────────────────────────────────────────────
+async function isPremium() {
+  try {
+    const { premium } = await chrome.storage.sync.get("premium");
+    return !!premium;
+  } catch { return false; }
+}
+
+// ── Extract extra detail-page data (description, equipment, photos) ───────────
+function extractDetailExtras() {
+  try {
+    const script = document.getElementById("__NEXT_DATA__");
+    if (!script) return {};
+    const data = JSON.parse(script.textContent);
+    const listing = data.props?.pageProps?.listing ?? data.props?.pageProps?.details ?? {};
+
+    // Description text
+    const description = listing.description ?? null;
+
+    // Equipment list
+    const equipment = [];
+    for (const section of listing.equipments ?? []) {
+      for (const item of section.equipments ?? section.items ?? []) {
+        if (item.label || item.name) equipment.push(item.label ?? item.name);
+      }
+    }
+
+    // Photo count
+    const photoCount = listing.images?.length ?? null;
+
+    return { description, equipment: equipment.length ? equipment : null, photo_count: photoCount };
+  } catch {
+    return {};
+  }
+}
+
 // ── Extract car data from __NEXT_DATA__ ───────────────────────────────────────
 function extractCarData() {
   const script = document.getElementById("__NEXT_DATA__");
@@ -188,8 +224,10 @@ function buildSidebar(carData, result, stats, detailCarData) {
         </div>`;
       })() : ""}
     </div>
+    <div id="as24-explanation-wrap"></div>
+    <div id="as24-price-history-wrap"></div>
     ${detailCarData ? `<div class="as24-detail-btn-wrap">
-      <button class="as24-detail-btn as24-detail-btn--disabled" id="as24-detail-btn" title="Coming soon: more accurate prediction using description, equipment, and images" disabled>Detailed analysis — coming soon</button>
+      <button class="as24-detail-btn" id="as24-detail-btn" disabled>Detailed analysis — coming soon</button>
     </div>` : ""}
     <div class="as24-meta">
       <div>${displayData.make} ${displayData.model} · ${displayData.year}</div>
@@ -205,8 +243,109 @@ function buildSidebar(carData, result, stats, detailCarData) {
     sidebar.remove();
   });
 
-  // "Detailed analysis" button — placeholder for future premium feature
-  // (description parsing, equipment, images, etc.)
+  // Premium features
+  if (detailCarData) {
+    isPremium().then(premium => {
+      if (!premium) return;
+
+      // 1. Auto-fetch LLM explanation
+      const wrap = document.getElementById("as24-explanation-wrap");
+      if (wrap) {
+        wrap.innerHTML = `<div class="as24-explanation as24-explanation--loading">✨ Generating insight...</div>`;
+        fetch(`${API_URL}/explain`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            make:             displayData.make,
+            model:            displayData.model,
+            year:             displayData.year,
+            mileage:          displayData.mileage,
+            fuel:             displayData.fuel,
+            transmission:     displayData.transmission,
+            power_kw:         displayData.power_kw ?? null,
+            predicted_price:  predicted_price,
+            actual_price:     actual_price,
+            diff_pct:         diff_pct,
+            confidence_level: confidence?.label ?? null,
+            sample_count:     confidence?.sample_count ?? null,
+            spread_pct:       confidence?.spread_pct ?? null,
+          }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            wrap.innerHTML = `<div class="as24-explanation">✨ ${data.explanation}</div>`;
+          })
+          .catch(() => { wrap.innerHTML = ""; });
+      }
+
+      // 2. Fetch price history
+      const histWrap = document.getElementById("as24-price-history-wrap");
+      const lid = detailCarData?.listing_id;
+      if (histWrap && lid) {
+        fetch(`${API_URL}/price-history/${lid}`)
+          .then(r => r.json())
+          .then(data => {
+            if (!data.history || data.history.length < 2) return;
+            const first = data.history[0];
+            const last  = data.history[data.history.length - 1];
+            const diff  = last.price - first.price;
+            if (diff === 0) return;
+            const fmt = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
+            const arrow = diff < 0 ? "↓" : "↑";
+            const color = diff < 0 ? "#16a34a" : "#dc2626";
+            const firstDate = new Date(first.date).toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
+            histWrap.innerHTML = `<div class="as24-price-history">
+              <span style="color:${color}">${arrow} Price ${diff < 0 ? "dropped" : "increased"} ${fmt(diff)} since ${firstDate}</span>
+            </div>`;
+          })
+          .catch(() => {});
+      }
+
+      // 3. Enable detailed analysis button
+      const detailBtn = document.getElementById("as24-detail-btn");
+      if (detailBtn) {
+        detailBtn.disabled = false;
+        detailBtn.textContent = "Detailed analysis";
+        detailBtn.title = "Refine prediction using listing description and equipment";
+        detailBtn.addEventListener("click", async () => {
+          detailBtn.textContent = "Analysing...";
+          detailBtn.disabled = true;
+          try {
+            const extras = extractDetailExtras();
+            const { listing_id, ...carPayload } = detailCarData;
+            const res = await fetch(`${API_URL}/predict/detailed`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...carPayload, ...extras }),
+            });
+            const detail = await res.json();
+
+            // Update sidebar in-place with adjusted prediction
+            document.getElementById("as24-analyser-sidebar")?.remove();
+            const adjustedResult = {
+              predicted_price: detail.predicted_price,
+              actual_price:    carData.actual_price,
+              diff_pct:        detail.diff_pct,
+              diff_eur:        detail.diff_eur ?? (carData.actual_price - detail.predicted_price),
+              confidence:      detail.confidence ?? confidence,
+              final_verdict:   detail.final_verdict ?? final_verdict,
+            };
+            buildSidebar(carData, adjustedResult, stats, null);
+
+            // Show adjustment explanation
+            const newWrap = document.getElementById("as24-explanation-wrap");
+            if (newWrap && detail.explanation) {
+              const adjSign = detail.adjustment_pct > 0 ? "+" : "";
+              newWrap.innerHTML = `<div class="as24-explanation">✨ Adjusted ${adjSign}${detail.adjustment_pct}% from base (€${detail.base_price.toLocaleString("nl-NL")}): ${detail.explanation}</div>`;
+            }
+          } catch {
+            detailBtn.textContent = "Failed — try again";
+            detailBtn.disabled = false;
+          }
+        });
+      }
+    });
+  }
 }
 
 function buildErrorSidebar(message) {

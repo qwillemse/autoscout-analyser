@@ -42,6 +42,47 @@ def init_db():
     return con
 
 
+def _ensure_price_history(con):
+    """Create price_history table if it doesn't exist."""
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS price_history (
+            listing_id TEXT,
+            price INTEGER,
+            scraped_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (listing_id, scraped_at)
+        )
+    """)
+    con.commit()
+
+
+def track_price_changes(con, listings):
+    """Record price changes before upserting new data."""
+    _ensure_price_history(con)
+    ids = [l["id"] for l in listings]
+    if not ids:
+        return
+    # Fetch current prices for these listings
+    placeholders = ",".join("?" * len(ids))
+    rows = con.execute(
+        f"SELECT id, price FROM listings WHERE id IN ({placeholders})", ids
+    ).fetchall()
+    old_prices = {row[0]: row[1] for row in rows}
+
+    changes = []
+    for l in listings:
+        old = old_prices.get(l["id"])
+        if old is not None and old != l["price"]:
+            # Price changed — record the OLD price (current one will be overwritten)
+            changes.append((l["id"], old))
+    if changes:
+        con.executemany(
+            "INSERT OR IGNORE INTO price_history (listing_id, price) VALUES (?, ?)",
+            changes,
+        )
+        con.commit()
+        print(f"Tracked {len(changes)} price changes")
+
+
 def save(con, listings):
     """Insert new listings and update price + scraped_at for existing ones."""
     con.executemany("""

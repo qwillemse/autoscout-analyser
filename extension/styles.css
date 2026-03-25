@@ -81,6 +81,14 @@
   font-size: 13px;
 }
 
+/* ── Price history ────────────────────────────────────────────────────────── */
+.as24-price-history {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  border-bottom: 1px solid #e5e7eb;
+}
+
 /* ── Detailed analysis button ─────────────────────────────────────────────── */
 .as24-detail-btn-wrap {
   padding: 8px 16px;
@@ -109,6 +117,21 @@
   font-style: italic;
   background: #f9fafb;
   border-style: dashed;
+}
+
+/* ── Premium explanation ──────────────────────────────────────────────────── */
+.as24-explanation {
+  padding: 10px 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fefce8;
+}
+.as24-explanation--loading {
+  color: #9ca3af;
+  font-style: italic;
+  background: #f9fafb;
 }
 
 .as24-meta {

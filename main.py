@@ -2,7 +2,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import MAKES, YEAR_BANDS
-from db import init_db, save, purge_stale
+from db import init_db, save, track_price_changes, purge_stale
 from scraper import scrape_page
 from train import retrain
 
@@ -37,6 +37,7 @@ def scrape_all(con, max_pages: int = PAGES_PER_BAND):
             try:
                 listings = future.result()
                 if listings:
+                    track_price_changes(con, listings)
                     save(con, listings)
                     print(f"✓ {make}: {len(listings)} saved")
                 else:

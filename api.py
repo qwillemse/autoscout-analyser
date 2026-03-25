@@ -8,12 +8,22 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from config import DB_PATH, MODEL_PATH
+
+# ── LLM client (lazy init) ──────────────────────────────────────────────────
+_openai_client = None
+
+def get_openai():
+    global _openai_client
+    if _openai_client is None:
+        import openai
+        _openai_client = openai.OpenAI()  # reads OPENAI_API_KEY from env
+    return _openai_client
 
 CURRENT_YEAR = datetime.now().year
 
@@ -353,3 +363,199 @@ def predict(request: Request, car: CarInput):
         response["final_verdict"] = compute_final_verdict(diff_pct, confidence)
 
     return response
+
+
+# ── Explain endpoint (premium) ───────────────────────────────────────────────
+class ExplainInput(BaseModel):
+    make: str
+    model: str
+    year: int
+    mileage: int
+    fuel: str
+    transmission: str
+    power_kw:        Optional[int] = None
+    predicted_price: int
+    actual_price:    int
+    diff_pct:        float
+    confidence_level: Optional[str] = None
+    sample_count:    Optional[int] = None
+    spread_pct:      Optional[float] = None
+
+@app.post("/explain")
+@limiter.limit("10/minute")
+def explain(request: Request, data: ExplainInput):
+    car_age = CURRENT_YEAR - data.year
+    mileage_per_year = round(data.mileage / max(car_age, 1))
+    avg_mileage_per_year = 15_000  # rough NL average
+
+    # Fetch average price for this make/model from DB for context
+    avg_price = None
+    try:
+        con = sqlite3.connect(DB_PATH)
+        row = con.execute(
+            "SELECT AVG(price), COUNT(*) FROM listings WHERE make = ? AND model = ?",
+            (data.make, data.model),
+        ).fetchone()
+        con.close()
+        if row and row[1] > 5:
+            avg_price = int(row[0])
+    except Exception:
+        pass
+
+    prompt = f"""You are a used car pricing expert for the Dutch market (AutoScout24 NL).
+
+Car details:
+- {data.make} {data.model}, {data.year} ({car_age} years old)
+- {data.mileage:,} km ({mileage_per_year:,} km/year — {"above" if mileage_per_year > avg_mileage_per_year else "below"} average of ~15,000 km/year)
+- Fuel: {data.fuel}, Transmission: {data.transmission}
+{f"- Power: {data.power_kw} kW" if data.power_kw else ""}
+
+Pricing:
+- Our model predicts this car is worth: €{data.predicted_price:,}
+- The seller is asking: €{data.actual_price:,}
+- Difference: {data.diff_pct:+.1f}% ({"seller asks less than predicted" if data.diff_pct < 0 else "seller asks more than predicted"})
+{f"- Average {data.make} {data.model} in our database: €{avg_price:,}" if avg_price else ""}
+
+Prediction confidence: {data.confidence_level or "unknown"}{f" (±{data.spread_pct}%, based on {data.sample_count} similar cars)" if data.sample_count else ""}
+
+Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable. Be direct and helpful — this is for a car buyer."""
+
+    try:
+        client = get_openai()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.7,
+        )
+        explanation = response.choices[0].message.content.strip()
+        return {"explanation": explanation}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"LLM service error: {str(e)}")
+
+
+# ── Detailed prediction endpoint (premium) ───────────────────────────────────
+class DetailedInput(BaseModel):
+    make: str
+    model: str
+    year: int
+    mileage: int
+    fuel: str
+    transmission: str
+    power_kw:      Optional[int] = None
+    range_km:      Optional[int] = None
+    trim_id:       Optional[str] = None
+    variant_id:    Optional[str] = None
+    generation_id: Optional[str] = None
+    body_type:     Optional[str] = None
+    colour:        Optional[str] = None
+    seller_type:   Optional[str] = None
+    actual_price:  Optional[int] = None
+    description:   Optional[str] = None
+    equipment:     Optional[List[str]] = None
+    photo_count:   Optional[int] = None
+
+@app.post("/predict/detailed")
+@limiter.limit("10/minute")
+def predict_detailed(request: Request, car: DetailedInput):
+    # Step 1: Base prediction from XGBoost (same as /predict)
+    pipeline = get_pipeline()
+    features = pd.DataFrame([_build_features(car)])
+    base_price = int(pipeline.predict(features)[0])
+
+    # Step 2: Ask LLM for adjustment based on description + equipment
+    adjustment_pct = 0
+    explanation = ""
+
+    has_extra = car.description or car.equipment
+    if has_extra:
+        car_age = CURRENT_YEAR - car.year
+        mileage_per_year = round(car.mileage / max(car_age, 1))
+        equipment_str = ", ".join(car.equipment) if car.equipment else "Not listed"
+
+        prompt = f"""You are a used car valuation expert for the Dutch market.
+
+A machine learning model predicted this car's market value at €{base_price:,}. Your job is to adjust this prediction based on listing details that the model cannot see.
+
+Car: {car.make} {car.model} {car.year}, {car.mileage:,} km ({mileage_per_year:,} km/year), {car.fuel}, {car.power_kw or "?"} kW
+{f"Asking price: €{car.actual_price:,}" if car.actual_price else ""}
+
+Seller description:
+{car.description or "No description provided"}
+
+Equipment: {equipment_str}
+Photos: {car.photo_count or "unknown"}
+
+Based on the description and equipment, provide a price adjustment percentage.
+
+Positive adjustments for: full service history, single owner, factory warranty, accident-free, many premium features, lots of photos, well-maintained.
+Negative adjustments for: mentions of damage/accidents, export-only, missing APK (MOT), sparse description/few photos, high owner count.
+
+Respond with ONLY a JSON object, no other text:
+{{"adjustment_pct": <number between -15 and +15>, "reasoning": "<1-2 sentences>"}}"""
+
+        try:
+            client = get_openai()
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=150,
+                temperature=0.3,
+                response_format={"type": "json_object"},
+            )
+            import json
+            parsed = json.loads(response.choices[0].message.content)
+            adjustment_pct = max(-15, min(15, float(parsed.get("adjustment_pct", 0))))
+            explanation = parsed.get("reasoning", "")
+        except Exception:
+            pass  # Fall back to base prediction if LLM fails
+
+    adjusted_price = int(base_price * (1 + adjustment_pct / 100))
+
+    result = {
+        "predicted_price": adjusted_price,
+        "base_price":      base_price,
+        "adjustment_pct":  round(adjustment_pct, 1),
+        "explanation":     explanation,
+    }
+
+    if car.actual_price:
+        diff_pct = (car.actual_price - adjusted_price) / adjusted_price * 100
+        result["actual_price"] = car.actual_price
+        result["diff_pct"]     = round(diff_pct, 1)
+        result["diff_eur"]     = car.actual_price - adjusted_price
+
+        confidence = get_confidence(car.trim_id, car.make, car.model,
+                                    car.year, car.mileage,
+                                    fuel=car.fuel, power_kw=car.power_kw)
+        result["confidence"]    = confidence
+        result["final_verdict"] = compute_final_verdict(diff_pct, confidence)
+
+    return result
+
+
+# ── Price history endpoint (premium) ─────────────────────────────────────────
+@app.get("/price-history/{listing_id}")
+@limiter.limit("30/minute")
+def price_history(request: Request, listing_id: str):
+    try:
+        con = sqlite3.connect(DB_PATH)
+        # Get history records
+        rows = con.execute(
+            "SELECT price, scraped_at FROM price_history WHERE listing_id = ? ORDER BY scraped_at",
+            (listing_id,),
+        ).fetchall()
+        # Also get current price
+        current = con.execute(
+            "SELECT price, scraped_at FROM listings WHERE id = ?",
+            (listing_id,),
+        ).fetchone()
+        con.close()
+    except Exception:
+        return {"history": [], "current": None}
+
+    history = [{"price": r[0], "date": r[1]} for r in rows]
+    if current:
+        history.append({"price": current[0], "date": current[1]})
+
+    return {"history": history, "listing_id": listing_id}
