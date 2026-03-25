@@ -272,9 +272,8 @@ function buildSidebar(carData, result, stats, detailCarData) {
     isPremium().then(premium => {
       if (!premium) return;
 
-      // 1. Auto-fetch LLM explanation (include extras summary for richer insight)
+      // 1. Auto-fetch LLM explanation (model-based only — no listing extras)
       const wrap = document.getElementById("as24-explanation-wrap");
-      const extras = extractDetailExtras();
       if (wrap) {
         wrap.innerHTML = `<div class="as24-explanation as24-explanation--loading">✨ Generating insight...</div>`;
         fetch(`${API_URL}/explain`, {
@@ -294,10 +293,6 @@ function buildSidebar(carData, result, stats, detailCarData) {
             confidence_level: confidence?.label ?? null,
             sample_count:     confidence?.sample_count ?? null,
             spread_pct:       confidence?.spread_pct ?? null,
-            description:      extras.description ?? null,
-            equipment:        extras.equipment ?? null,
-            photo_count:      extras.photo_count ?? null,
-            previous_owners:  extras.previous_owners ?? null,
           }),
         })
           .then(r => r.json())
