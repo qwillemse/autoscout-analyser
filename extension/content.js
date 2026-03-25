@@ -12,19 +12,12 @@ function extractDetailExtras() {
     const script = document.getElementById("__NEXT_DATA__");
     if (!script) return {};
     const data = JSON.parse(script.textContent);
-    const listing = data.props?.pageProps?.listing ?? data.props?.pageProps?.details ?? {};
+    const listing = data.props?.pageProps?.listingDetails
+                 ?? data.props?.pageProps?.listing
+                 ?? data.props?.pageProps?.details ?? {};
 
     // Description text
     const description = listing.description ?? null;
-
-    // Equipment list (try multiple structures AutoScout24 uses)
-    const equipment = [];
-    for (const section of listing.equipments ?? listing.equipment ?? []) {
-      for (const item of section.equipments ?? section.items ?? section.equipment ?? [item]) {
-        const label = item?.label ?? item?.name ?? (typeof item === "string" ? item : null);
-        if (label) equipment.push(label);
-      }
-    }
 
     // Photo count
     const photoCount = listing.images?.length ?? null;
@@ -33,22 +26,44 @@ function extractDetailExtras() {
     const sellerRating = listing.seller?.rating ?? null;
     const sellerType   = listing.seller?.type ?? null;
 
-    // Vehicle details (APK date, previous owners, etc.)
-    let apkDate = null;
+    // Equipment — scraped from the DOM "Opties" section (not in __NEXT_DATA__)
+    const equipment = [];
+    const headings = document.querySelectorAll("h2, h3");
+    for (const h of headings) {
+      if (h.textContent.trim() === "Opties") {
+        let container = h.parentElement;
+        for (let i = 0; i < 3; i++) {
+          if (container.querySelectorAll("li, span, div").length > 10) break;
+          container = container.parentElement;
+        }
+        for (const el of container.querySelectorAll("div, li, span")) {
+          const text = el.textContent.trim();
+          if (text.length > 2 && text.length < 60 && !text.includes("\n") && el.children.length === 0) {
+            equipment.push(text);
+          }
+        }
+        break;
+      }
+    }
+
+    // Vehicle history from DOM (previous owners, APK)
     let previousOwners = null;
-    for (const detail of listing.vehicleDetails ?? []) {
-      const label = detail.ariaLabel ?? detail.label ?? "";
-      const val   = detail.data ?? detail.value ?? "";
-      if (label.toLowerCase().includes("apk")) apkDate = val;
-      if (label.toLowerCase().includes("eigenaar") || label.toLowerCase().includes("owner")) {
+    let apkDate = null;
+    const dtElements = document.querySelectorAll("dt, .sc-font-bold");
+    for (const dt of dtElements) {
+      const label = dt.textContent.trim().toLowerCase();
+      const dd = dt.nextElementSibling;
+      const val = dd?.textContent?.trim() ?? "";
+      if (label.includes("eigenaar") || label.includes("owner")) {
         const match = val.match(/\d+/);
         if (match) previousOwners = parseInt(match[0], 10);
       }
+      if (label.includes("apk")) apkDate = val;
     }
 
     return {
       description,
-      equipment:       equipment.length ? equipment : null,
+      equipment:       equipment.length ? [...new Set(equipment)] : null,
       photo_count:     photoCount,
       seller_rating:   sellerRating,
       seller_type:     sellerType,
