@@ -2,11 +2,8 @@
 const API_URL = "https://web-production-870f.up.railway.app";
 
 // ── Premium check ─────────────────────────────────────────────────────────────
-async function isPremium() {
-  try {
-    const { premium } = await chrome.storage.sync.get("premium");
-    return !!premium;
-  } catch { return false; }
+function isPremium() {
+  return Promise.resolve(localStorage.getItem("as24_premium") === "true");
 }
 
 // ── Extract extra detail-page data (description, equipment, photos, etc.) ─────
@@ -251,6 +248,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
       })() : ""}
     </div>
     <div id="as24-explanation-wrap"></div>
+    <div id="as24-explanation-toggle" style="display:none"></div>
     <div id="as24-price-history-wrap"></div>
     ${detailCarData ? `<div class="as24-detail-btn-wrap">
       <button class="as24-detail-btn" id="as24-detail-btn" disabled>Detailed analysis — coming soon</button>
@@ -274,8 +272,9 @@ function buildSidebar(carData, result, stats, detailCarData) {
     isPremium().then(premium => {
       if (!premium) return;
 
-      // 1. Auto-fetch LLM explanation
+      // 1. Auto-fetch LLM explanation (include extras summary for richer insight)
       const wrap = document.getElementById("as24-explanation-wrap");
+      const extras = extractDetailExtras();
       if (wrap) {
         wrap.innerHTML = `<div class="as24-explanation as24-explanation--loading">✨ Generating insight...</div>`;
         fetch(`${API_URL}/explain`, {
@@ -295,11 +294,28 @@ function buildSidebar(carData, result, stats, detailCarData) {
             confidence_level: confidence?.label ?? null,
             sample_count:     confidence?.sample_count ?? null,
             spread_pct:       confidence?.spread_pct ?? null,
+            description:      extras.description ?? null,
+            equipment:        extras.equipment ?? null,
+            photo_count:      extras.photo_count ?? null,
+            previous_owners:  extras.previous_owners ?? null,
           }),
         })
           .then(r => r.json())
           .then(data => {
-            wrap.innerHTML = `<div class="as24-explanation">✨ ${data.explanation}</div>`;
+            wrap.innerHTML = `<div class="as24-explanation" id="as24-explanation-text">✨ ${data.explanation}</div>`;
+            const toggle = document.getElementById("as24-explanation-toggle");
+            if (toggle) {
+              toggle.style.display = "";
+              toggle.innerHTML = `<button class="as24-explanation-collapse" id="as24-explanation-collapse-btn">▲ Hide insight</button>`;
+              let visible = true;
+              document.getElementById("as24-explanation-collapse-btn").addEventListener("click", () => {
+                const text = document.getElementById("as24-explanation-text");
+                if (!text) return;
+                visible = !visible;
+                text.style.display = visible ? "" : "none";
+                document.getElementById("as24-explanation-collapse-btn").textContent = visible ? "▲ Hide insight" : "▼ Show insight";
+              });
+            }
           })
           .catch(() => { wrap.innerHTML = ""; });
       }
@@ -361,27 +377,41 @@ function buildSidebar(carData, result, stats, detailCarData) {
               }),
             });
             const detail = await res.json();
+            const fmt = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
 
-            // Update sidebar in-place with adjusted prediction
+            // Update prediction numbers in-place
+            const rows = sidebar.querySelectorAll(".as24-row");
+            if (rows[0]) rows[0].querySelector(".as24-value").textContent = fmt(detail.predicted_price);
             const adjDiffEur = actual_price - detail.predicted_price;
-            const adjDiffPct = detail.diff_pct ?? ((adjDiffEur / detail.predicted_price) * 100);
-            document.getElementById("as24-analyser-sidebar")?.remove();
-            const adjustedResult = {
-              predicted_price: detail.predicted_price,
-              actual_price:    actual_price,
-              diff_pct:        Math.round(adjDiffPct * 10) / 10,
-              diff_eur:        adjDiffEur,
-              confidence:      confidence,
-              final_verdict:   final_verdict,
-            };
-            buildSidebar(carData, adjustedResult, stats, null);
-
-            // Show adjustment explanation
-            const newWrap = document.getElementById("as24-explanation-wrap");
-            if (newWrap && detail.explanation) {
-              const adjSign = detail.adjustment_pct > 0 ? "+" : "";
-              newWrap.innerHTML = `<div class="as24-explanation">✨ Adjusted ${adjSign}${detail.adjustment_pct}% from base (€${detail.base_price.toLocaleString("nl-NL")}): ${detail.explanation}</div>`;
+            const adjDiffPct = detail.diff_pct ?? Math.round((adjDiffEur / detail.predicted_price) * 1000) / 10;
+            const adjSign2 = adjDiffEur >= 0 ? "+" : "-";
+            if (rows[2]) {
+              const diffVal = rows[2].querySelector(".as24-value");
+              diffVal.textContent = `${adjSign2}${fmt(adjDiffEur)} (${adjDiffPct > 0 ? "+" : ""}${Math.round(adjDiffPct * 10) / 10}%)`;
             }
+
+            // Update explanation in-place
+            if (detail.explanation) {
+              const wrap = document.getElementById("as24-explanation-wrap");
+              if (wrap) {
+                const existingText = document.getElementById("as24-explanation-text");
+                const adjSign = detail.adjustment_pct > 0 ? "+" : "";
+                const adjNote = detail.adjustment_pct ? `\n\n📊 Adjusted ${adjSign}${detail.adjustment_pct}% from base prediction (${fmt(detail.base_price)}).` : "";
+                const newHtml = `✨ ${detail.explanation}${adjNote}`;
+                if (existingText) {
+                  existingText.innerHTML = newHtml;
+                  existingText.style.display = "";
+                } else {
+                  wrap.innerHTML = `<div class="as24-explanation" id="as24-explanation-text">${newHtml}</div>`;
+                }
+                // Update toggle text if it exists
+                const collapseBtn = document.getElementById("as24-explanation-collapse-btn");
+                if (collapseBtn) collapseBtn.textContent = "▲ Hide insight";
+              }
+            }
+
+            detailBtn.textContent = "✓ Analysis complete";
+            detailBtn.disabled = true;
           } catch {
             detailBtn.textContent = "Failed — try again";
             detailBtn.disabled = false;

@@ -373,13 +373,17 @@ class ExplainInput(BaseModel):
     mileage: int
     fuel: str
     transmission: str
-    power_kw:        Optional[int] = None
-    predicted_price: int
-    actual_price:    int
-    diff_pct:        float
+    power_kw:         Optional[int] = None
+    predicted_price:  int
+    actual_price:     int
+    diff_pct:         float
     confidence_level: Optional[str] = None
-    sample_count:    Optional[int] = None
-    spread_pct:      Optional[float] = None
+    sample_count:     Optional[int] = None
+    spread_pct:       Optional[float] = None
+    description:      Optional[str] = None
+    equipment:        Optional[list[str]] = None
+    photo_count:      Optional[int] = None
+    previous_owners:  Optional[int] = None
 
 @app.post("/explain")
 @limiter.limit("10/minute")
@@ -402,6 +406,22 @@ def explain(request: Request, data: ExplainInput):
     except Exception:
         pass
 
+    # Build listing details section if extras are available
+    listing_details = ""
+    if data.description or data.equipment or data.previous_owners is not None:
+        parts = []
+        if data.previous_owners is not None:
+            parts.append(f"- Previous owners: {data.previous_owners}")
+        if data.photo_count:
+            parts.append(f"- Photos: {data.photo_count}")
+        if data.equipment:
+            parts.append(f"- Equipment: {', '.join(data.equipment[:20])}")
+        if data.description:
+            # Truncate long descriptions
+            desc = data.description[:500] + ("..." if len(data.description) > 500 else "")
+            parts.append(f"- Seller description: {desc}")
+        listing_details = "\n\nListing details:\n" + "\n".join(parts)
+
     prompt = f"""You are a used car pricing expert for the Dutch market (AutoScout24 NL).
 
 Car details:
@@ -417,8 +437,9 @@ Pricing:
 {f"- Average {data.make} {data.model} in our database: €{avg_price:,}" if avg_price else ""}
 
 Prediction confidence: {data.confidence_level or "unknown"}{f" (±{data.spread_pct}%, based on {data.sample_count} similar cars)" if data.sample_count else ""}
+{listing_details}
 
-Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable. Be direct and helpful — this is for a car buyer."""
+Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable.{" Reference specific details from the listing description or equipment where relevant." if listing_details else ""} Be direct and helpful — this is for a car buyer."""
 
     try:
         client = get_openai()
