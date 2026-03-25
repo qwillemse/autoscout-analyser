@@ -106,18 +106,27 @@ function getOutOfRangeWarning(carData) {
   return reasons.length ? reasons : null;
 }
 
+// ── Derive simple verdict category from final_verdict label ──────────────────
+function getVerdictCategory(finalVerdict) {
+  if (!finalVerdict?.label) return "fair";
+  const label = finalVerdict.label.toLowerCase();
+  if (label.includes("underpriced") || label.includes("great deal")) return "underpriced";
+  if (label.includes("overpriced")) return "overpriced";
+  return "fair";
+}
+
 // ── Build sidebar ──────────────────────────────────────────────────────────────
 function buildSidebar(carData, result, stats, detailCarData) {
-  const { predicted_price, actual_price, diff_pct, diff_eur, verdict, confidence, final_verdict } = result;
+  const { predicted_price, actual_price, diff_pct, diff_eur, confidence, final_verdict } = result;
 
   const verdictConfig = {
     underpriced: { bg: "#dcfce7", color: "#16a34a" },
     overpriced:  { bg: "#fee2e2", color: "#dc2626" },
     fair:        { bg: "#dbeafe", color: "#2563eb" },
   };
-  const v = verdictConfig[verdict] ?? verdictConfig.fair;
+  const v = verdictConfig[getVerdictCategory(final_verdict)] ?? verdictConfig.fair;
 
-  const fv    = final_verdict ?? { label: verdict ?? "Unknown", color: "#2563eb" };
+  const fv    = final_verdict ?? { label: "Unknown", color: "#2563eb" };
   const fmt   = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
   const sign  = diff_eur > 0 ? "+" : "-";
 
@@ -410,7 +419,6 @@ async function main(isSPA = false) {
         actual_price:    carData.actual_price,
         diff_pct:        batch.diff_pct,
         diff_eur:        carData.actual_price - batch.predicted_price,
-        verdict:         batch.diff_pct > 15 ? "overpriced" : batch.diff_pct < -15 ? "underpriced" : "fair",
         confidence:      batch.confidence ?? null,
         final_verdict:   batch.final_verdict,
       };
@@ -434,7 +442,6 @@ async function main(isSPA = false) {
         actual_price:    carData.actual_price,
         diff_pct:        batch.diff_pct,
         diff_eur:        carData.actual_price - batch.predicted_price,
-        verdict:         batch.diff_pct > 15 ? "overpriced" : batch.diff_pct < -15 ? "underpriced" : "fair",
         confidence:      batch.confidence ?? null,
         final_verdict:   batch.final_verdict,
       };

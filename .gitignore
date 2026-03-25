@@ -1,7 +1,10 @@
-# Data & model — too large for git, upload to Railway volume manually
-cars.db
+# Data & model — large files, force-added via `git add -f` for Railway deploy
+# cars.db
+# pipeline.joblib
 listings.db
-pipeline.joblib
+
+# Experiment artifacts
+catboost_info/
 
 # Python
 __pycache__/

@@ -1,5 +1,4 @@
 import sqlite3
-import os
 from datetime import datetime
 
 import joblib
@@ -18,15 +17,29 @@ from config import DB_PATH, MODEL_PATH
 
 CURRENT_YEAR = datetime.now().year
 
+# ── Thresholds & constants ───────────────────────────────────────────────────
+# Confidence: how tightly comparable cars are priced (spread of log-prices %)
+CONFIDENCE_HIGH_THRESHOLD  = 12   # spread < 12% → "Very accurate"
+CONFIDENCE_MED_THRESHOLD   = 22   # spread < 22% → "Accurate", else "Not accurate"
+CONFIDENCE_MIN_SAMPLES     = 10   # minimum comparable cars needed
+CONFIDENCE_FALLBACK_SPREAD = 40   # assumed spread when no comparables found
+
+# Verdict: SNR thresholds (signal-to-noise = |diff_pct| / spread)
+SNR_STRONG = 2.0                  # high confidence in over/underpriced
+SNR_LIKELY = 1.0                  # likely over/underpriced
+SNR_POSSIBLE = 0.5                # possibly over/underpriced
+VERDICT_FAIR_PCT = 5              # |diff_pct| < 5% → always "Fair price"
+VERDICT_SIMPLE_PCT = 15           # simple over/underpriced threshold (legacy)
+
 # ── Load model once at startup ────────────────────────────────────────────────
 # Loads lazily so the app starts cleanly even before pipeline.joblib is uploaded
-import os as _os
+import os
 _pipeline = None
 
 def get_pipeline():
     global _pipeline
     if _pipeline is None:
-        if not _os.path.exists(MODEL_PATH):
+        if not os.path.exists(MODEL_PATH):
             from fastapi import HTTPException
             raise HTTPException(status_code=503, detail="Model not loaded yet — upload pipeline.joblib to /data/")
         _pipeline = joblib.load(MODEL_PATH)
@@ -62,7 +75,7 @@ def get_confidence(trim_id: Optional[str], make: str, model: str,
     MIN_SAMPLES is reached. Also filters by fuel type and power_kw range where
     available — electric vs petrol or base vs AMG are not comparable.
     """
-    MIN_SAMPLES = 10
+    MIN_SAMPLES = CONFIDENCE_MIN_SAMPLES
     YEAR_PCT    = 0.20
     MILEAGE_PCT = 0.20
     POWER_PCT   = 0.25   # ±25% power_kw window
@@ -124,9 +137,9 @@ def get_confidence(trim_id: Optional[str], make: str, model: str,
 
     spread_pct = round(_spread(prices), 1)
 
-    if spread_pct < 12:
+    if spread_pct < CONFIDENCE_HIGH_THRESHOLD:
         level, label = "high",   "Very accurate"
-    elif spread_pct < 22:
+    elif spread_pct < CONFIDENCE_MED_THRESHOLD:
         level, label = "medium", "Accurate"
     else:
         level, label = "low",    "Not accurate"
@@ -143,21 +156,21 @@ def get_confidence(trim_id: Optional[str], make: str, model: str,
 # ── Verdict helper ───────────────────────────────────────────────────────────
 def compute_final_verdict(diff_pct: float, confidence: dict) -> dict:
     """SNR-based verdict used by both /predict and /predict/batch."""
-    spread = confidence.get("spread_pct") or 40  # None → conservative fallback
+    spread = confidence.get("spread_pct") or CONFIDENCE_FALLBACK_SPREAD
     snr = abs(diff_pct) / spread if spread > 0 else 0
 
-    if abs(diff_pct) < 5:
+    if abs(diff_pct) < VERDICT_FAIR_PCT:
         return {"label": "Fair price", "color": "#2563eb"}
     elif diff_pct < 0:  # underpriced signal
-        if   snr > 2.0: return {"label": "Great deal",           "color": "#16a34a"}
-        elif snr > 1.0: return {"label": "Likely underpriced",   "color": "#65a30d"}
-        elif snr > 0.5: return {"label": "Possibly underpriced", "color": "#84cc16"}
-        else:            return {"label": "Fair price",           "color": "#2563eb"}
+        if   snr > SNR_STRONG:   return {"label": "Great deal",           "color": "#16a34a"}
+        elif snr > SNR_LIKELY:   return {"label": "Likely underpriced",   "color": "#65a30d"}
+        elif snr > SNR_POSSIBLE: return {"label": "Possibly underpriced", "color": "#84cc16"}
+        else:                     return {"label": "Fair price",           "color": "#2563eb"}
     else:               # overpriced signal
-        if   snr > 2.0: return {"label": "Overpriced",           "color": "#dc2626"}
-        elif snr > 1.0: return {"label": "Likely overpriced",    "color": "#ea580c"}
-        elif snr > 0.5: return {"label": "Possibly overpriced",  "color": "#f97316"}
-        else:            return {"label": "Fair price",           "color": "#2563eb"}
+        if   snr > SNR_STRONG:   return {"label": "Overpriced",           "color": "#dc2626"}
+        elif snr > SNR_LIKELY:   return {"label": "Likely overpriced",    "color": "#ea580c"}
+        elif snr > SNR_POSSIBLE: return {"label": "Possibly overpriced",  "color": "#f97316"}
+        else:                     return {"label": "Fair price",           "color": "#2563eb"}
 
 
 # ── Feature builder (must match train.py features exactly) ────────────────────
@@ -331,9 +344,9 @@ def predict(request: Request, car: CarInput):
         response["diff_pct"]     = round(diff_pct, 1)
         response["diff_eur"]     = car.actual_price - predicted_price
         # Simple verdict for backwards compatibility
-        if diff_pct > 15:
+        if diff_pct > VERDICT_SIMPLE_PCT:
             response["verdict"] = "overpriced"
-        elif diff_pct < -15:
+        elif diff_pct < -VERDICT_SIMPLE_PCT:
             response["verdict"] = "underpriced"
         else:
             response["verdict"] = "fair"

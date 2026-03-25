@@ -4,7 +4,7 @@ import re
 from bs4 import BeautifulSoup
 import requests
 
-from config import *
+from config import BASE_URL, PARAMS, HEADERS
 
 
 

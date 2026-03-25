@@ -139,8 +139,6 @@ def train_and_save(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series):
 
     # Feature importance
     model = pipeline.named_steps["model"]
-    all_features = HIGH_CARD + list(X.columns[len(NUMERIC + HIGH_CARD):len(NUMERIC + HIGH_CARD) + len([c for c in X.columns if c not in NUMERIC and c not in HIGH_CARD])]) + NUMERIC
-    # Simpler: just use column names after transform
     imp = model.feature_importances_
     feature_names = HIGH_CARD + [c for c in X.columns if c not in NUMERIC and c not in HIGH_CARD] + NUMERIC
     if len(feature_names) == len(imp):

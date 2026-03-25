@@ -1,5 +1,5 @@
 import sqlite3
-from config import *
+from config import DB_PATH
 
 STALE_DAYS = 30  # listings not seen in this many days are purged before retraining
 
