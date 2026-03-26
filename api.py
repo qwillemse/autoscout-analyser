@@ -384,6 +384,7 @@ class ExplainInput(BaseModel):
     equipment:        Optional[list[str]] = None
     photo_count:      Optional[int] = None
     previous_owners:  Optional[int] = None
+    apk_date:         Optional[str] = None
 
 @app.post("/explain")
 @limiter.limit("10/minute")
@@ -408,10 +409,12 @@ def explain(request: Request, data: ExplainInput):
 
     # Build listing details section if extras are available
     listing_details = ""
-    if data.description or data.equipment or data.previous_owners is not None:
+    if data.description or data.equipment or data.previous_owners is not None or data.apk_date:
         parts = []
         if data.previous_owners is not None:
             parts.append(f"- Previous owners: {data.previous_owners}")
+        if data.apk_date:
+            parts.append(f"- APK (MOT) valid until: {data.apk_date}")
         if data.photo_count:
             parts.append(f"- Photos: {data.photo_count}")
         if data.equipment:

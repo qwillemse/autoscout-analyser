@@ -303,6 +303,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
           equipment:        extras.equipment ?? null,
           previous_owners:  extras.previous_owners ?? null,
           photo_count:      extras.photo_count ?? null,
+          apk_date:         extras.apk_date ?? null,
         }),
       })
         .then(r => r.json())
