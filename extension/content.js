@@ -356,21 +356,22 @@ function buildSidebar(carData, result, stats, detailCarData) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          make:         displayData.make,
-          model:        displayData.model,
-          year:         displayData.year,
-          mileage:      displayData.mileage,
-          actual_price: actual_price,
-          listing_id:   displayData.listing_id ?? null,
+          make:            displayData.make,
+          model:           displayData.model,
+          year:            displayData.year,
+          mileage:         displayData.mileage,
+          actual_price:    actual_price,
+          predicted_price: predicted_price,
+          listing_id:      displayData.listing_id ?? null,
         }),
       })
         .then(r => r.json())
         .then(data => {
           if (!data.similar || !data.similar.length) return;
           const fmt = (n) => "€" + n.toLocaleString("nl-NL");
-          const rankText = data.rank ? `#${data.rank} of ${data.total} similar listings` : "";
+          const rankText = data.rank ? `#${data.rank} of ${data.total} similar listings by deal` : "";
           let html = `<div class="as24-similar">`;
-          if (rankText) html += `<div class="as24-similar-rank">${rankText} by value</div>`;
+          if (rankText) html += `<div class="as24-similar-rank">${rankText}</div>`;
           html += `<div class="as24-similar-list">`;
           for (const car of data.similar.slice(0, 3)) {
             const diffPct = car.diff_pct;
