@@ -3,6 +3,8 @@
   top: 80px;
   right: 20px;
   width: 260px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -10,7 +12,6 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;
   z-index: 99999;
-  overflow: hidden;
 }
 
 .as24-header {
