@@ -8,7 +8,6 @@ _here = os.path.dirname(__file__)
 DB_PATH    = os.environ.get("DB_PATH",    os.path.join(_here, "cars.db"))
 MODEL_PATH = os.environ.get("MODEL_PATH", os.path.join(_here, "pipeline.joblib"))
 HEADERS = {"User-Agent": "Mozilla/5.0"}
-BASE_URL = "https://www.autoscout24.nl/lst/{make}"
 
 MAKES = [
     # High volume (original 15)
@@ -38,7 +37,6 @@ YEAR_BANDS = (
 
 # to avoid outliers and focus on typical cars, we set some reasonable filters
 PARAMS = {
-    "cy": "NL",
     "kmto": 250000,       # exclude >250k km — outliers, essentially sold for parts
     "fregfrom": 2005,     # exclude pre-2005 — collectibles, completely different market
     "pricefrom": 500,

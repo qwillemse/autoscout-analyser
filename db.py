@@ -12,6 +12,7 @@ NEW_COLUMNS = [
     ("generation_id", "TEXT"),
     ("body_type",     "TEXT"),
     ("colour",        "TEXT"),
+    ("country",       "TEXT DEFAULT 'NL'"),
 ]
 
 
@@ -89,11 +90,11 @@ def save(con, listings):
         INSERT INTO listings
             (id, make, model, year, mileage, fuel, transmission, price, location,
              power_kw, seller_type, trim_id, range_km, variant_id, generation_id,
-             body_type, colour, scraped_at)
+             body_type, colour, country, scraped_at)
         VALUES
             (:id, :make, :model, :year, :mileage, :fuel, :transmission, :price, :location,
              :power_kw, :seller_type, :trim_id, :range_km, :variant_id, :generation_id,
-             :body_type, :colour, datetime('now'))
+             :body_type, :colour, :country, datetime('now'))
         ON CONFLICT(id) DO UPDATE SET
             price         = excluded.price,
             mileage       = excluded.mileage,
@@ -104,6 +105,7 @@ def save(con, listings):
             generation_id = excluded.generation_id,
             body_type     = excluded.body_type,
             colour        = excluded.colour,
+            country       = excluded.country,
             scraped_at    = excluded.scraped_at
     """, listings)
     con.commit()

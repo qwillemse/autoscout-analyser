@@ -4,13 +4,19 @@ import re
 from bs4 import BeautifulSoup
 import requests
 
-from config import BASE_URL, PARAMS, HEADERS
+from config import PARAMS, HEADERS
+from countries import get_country_config
 
 
 
-def scrape_page(make: str, page: int, year_from: int = None, year_to: int = None):
-    url = BASE_URL.format(make=make)
+def scrape_page(make: str, page: int, country: str = "NL",
+                year_from: int = None, year_to: int = None):
+    cfg = get_country_config(country)
+    prefix = cfg.get("search_prefix", "")
+    url = f"https://{cfg['domain']}{prefix}/lst/{make}"
     params = {**PARAMS, "page": page}
+    if cfg.get("cy"):
+        params["cy"] = cfg["cy"]
     if year_from:
         params["fregfrom"] = year_from
     if year_to:
@@ -38,6 +44,10 @@ def scrape_page(make: str, page: int, year_from: int = None, year_to: int = None
         print(f"Unexpected structure on page {page}")
         return []
 
+    # Use flexible label matching for power/range across languages
+    power_labels = cfg["power_labels"]
+    range_labels = cfg["range_labels"]
+
     results = []
     for item in listings_raw:
         try:
@@ -56,32 +66,29 @@ def scrape_page(make: str, page: int, year_from: int = None, year_to: int = None
             return m.group(1) if m else None
 
         trim_id       = _tax("trim_id")
-        variant_id    = _tax("variant_id")    # body-type variant within a model line
-        generation_id = _tax("generation_id") # model generation (e.g. Golf Mk7 vs Mk8)
+        variant_id    = _tax("variant_id")
+        generation_id = _tax("generation_id")
 
-        # Extract fields from vehicleDetails list
+        # Extract fields from vehicleDetails list (language-aware)
         power_kw = range_km = None
         for detail in item.get("vehicleDetails", []):
             label = detail.get("ariaLabel", "")
-            data  = detail.get("data", "") or ""
-            if label == "Vermogen kW (PK)":
+            detail_data = detail.get("data", "") or ""
+            # Power: match configured labels, or fallback to "kW" in label/data
+            if any(pl in label for pl in power_labels) or "kW" in label or "kW" in detail_data:
                 try:
-                    power_kw = int(data.split(" kW")[0])
-                except (ValueError, IndexError):
+                    power_kw = int(re.search(r"(\d+)\s*kW", detail_data).group(1))
+                except (AttributeError, ValueError):
                     pass
-            elif label == "actieradius":
+            # Range: match any configured label
+            elif any(rl in label for rl in range_labels):
                 try:
-                    range_km = int(data.split(" km")[0])
-                except (ValueError, IndexError):
+                    range_km = int(re.search(r"(\d[\d.]*)", detail_data).group(1).replace(".", ""))
+                except (AttributeError, ValueError):
                     pass
 
-        # Seller type: "private" or "dealer" / "professional"
         seller_type = item.get("seller", {}).get("type")
-
-        # Body type: "Limousine", "Combi", "SUV/Crossover", "Hatchback", etc.
         body_type = item.get("vehicle", {}).get("variant")
-
-        # Colour: "Wit", "Zwart", "Grijs", "Zilver", "Blauw", "Rood", etc.
         colour = item.get("vehicle", {}).get("colour")
 
         results.append({
@@ -100,8 +107,9 @@ def scrape_page(make: str, page: int, year_from: int = None, year_to: int = None
             "variant_id": variant_id,
             "generation_id": generation_id,
             "body_type": body_type,
-            "colour":    colour,
+            "colour": colour,
             "seller_type": seller_type,
+            "country": country,
         })
 
     return results
