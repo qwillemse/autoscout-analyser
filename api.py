@@ -441,9 +441,15 @@ Prediction confidence: {data.confidence_level or "unknown"}{f" (±{data.spread_p
 
 Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable.
 
-{'''IMPORTANT: If the listing description mentions anything that contradicts the listed specs (e.g. actual mileage differs from displayed mileage, replaced odometer/tellerunit, damage, accidents, export-only, missing APK), start your response with "⚠️ Warning:" followed by the concern. This is critical information for the buyer.
+{'''IMPORTANT — Dutch market context for reading descriptions:
+- "Eerste eigenaar in Nederland" means first DUTCH owner — the car was likely imported and had previous owners abroad. This is normal and NOT suspicious.
+- "Sinds [year] ~X km" means the current owner drove X km since that year, NOT that total mileage is X km. The total mileage is always the number shown in the listing specs above.
+- Replaced odometer/tellerunit means the DISPLAYED mileage may be wrong — the description usually states the real mileage. This IS a warning.
+- "Export", "schade" (damage), "niet rijdend" (not drivable), missing APK are genuine warnings.
 
-''' if listing_details else ""}{"Reference specific details from the listing description or equipment where relevant." if listing_details else ""} Be direct and helpful — this is for a car buyer."""
+Only start with "⚠️ Warning:" if there is a GENUINE concern like: replaced odometer with different actual mileage than listed, undisclosed damage, accidents, export-only status, or missing APK. Do NOT warn about normal import history or partial ownership details.
+
+''' if listing_details else ""}{"Reference specific details from the listing description or equipment where relevant. Mention notable issues (known defects, missing maintenance) and positives (full service history, new parts)." if listing_details else ""} Be direct and helpful — this is for a car buyer."""
 
     try:
         client = get_openai()
