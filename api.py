@@ -439,7 +439,11 @@ Pricing:
 Prediction confidence: {data.confidence_level or "unknown"}{f" (±{data.spread_pct}%, based on {data.sample_count} similar cars)" if data.sample_count else ""}
 {listing_details}
 
-Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable.{" Reference specific details from the listing description or equipment where relevant." if listing_details else ""} Be direct and helpful — this is for a car buyer."""
+Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable.
+
+{'''IMPORTANT: If the listing description mentions anything that contradicts the listed specs (e.g. actual mileage differs from displayed mileage, replaced odometer/tellerunit, damage, accidents, export-only, missing APK), start your response with "⚠️ Warning:" followed by the concern. This is critical information for the buyer.
+
+''' if listing_details else ""}{"Reference specific details from the listing description or equipment where relevant." if listing_details else ""} Be direct and helpful — this is for a car buyer."""
 
     try:
         client = get_openai()

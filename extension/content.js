@@ -281,6 +281,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
     const wrap = document.getElementById("as24-explanation-wrap");
     if (wrap) {
       wrap.innerHTML = `<div class="as24-explanation as24-explanation--loading">✨ Generating insight...</div>`;
+      const extras = extractDetailExtras();
       fetch(`${API_URL}/explain`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -298,6 +299,10 @@ function buildSidebar(carData, result, stats, detailCarData) {
           confidence_level: confidence?.label ?? null,
           sample_count:     confidence?.sample_count ?? null,
           spread_pct:       confidence?.spread_pct ?? null,
+          description:      extras.description ?? null,
+          equipment:        extras.equipment ?? null,
+          previous_owners:  extras.previous_owners ?? null,
+          photo_count:      extras.photo_count ?? null,
         }),
       })
         .then(r => r.json())
