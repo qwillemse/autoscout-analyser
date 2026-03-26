@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "AutoScout24 Price Analyser",
-  "version": "1.0",
-  "description": "Instantly see if a used car on AutoScout24 is fairly priced, overpriced, or a great deal.",
+  "version": "1.1",
+  "description": "Instantly see if a used car on AutoScout24 is fairly priced, overpriced, or a great deal. Works across all European AutoScout24 sites.",
   "icons": {
     "16":  "icons/icon16.png",
     "48":  "icons/icon48.png",
@@ -10,17 +10,58 @@
   },
   "host_permissions": [
     "https://www.autoscout24.nl/*",
+    "https://www.autoscout24.be/*",
+    "https://www.autoscout24.de/*",
+    "https://www.autoscout24.at/*",
+    "https://www.autoscout24.fr/*",
+    "https://www.autoscout24.it/*",
+    "https://www.autoscout24.es/*",
+    "https://www.autoscout24.lu/*",
     "https://web-production-870f.up.railway.app/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://www.autoscout24.nl/lst*"],
+      "matches": [
+        "https://www.autoscout24.nl/lst*",
+        "https://www.autoscout24.be/*/lst*",
+        "https://www.autoscout24.be/lst*",
+        "https://www.autoscout24.de/lst*",
+        "https://www.autoscout24.at/lst*",
+        "https://www.autoscout24.fr/lst*",
+        "https://www.autoscout24.it/lst*",
+        "https://www.autoscout24.es/lst*",
+        "https://www.autoscout24.lu/lst*"
+      ],
       "js": ["injected.js"],
       "world": "MAIN",
       "run_at": "document_start"
     },
     {
-      "matches": ["https://www.autoscout24.nl/aanbod/*", "https://www.autoscout24.nl/auto/*", "https://www.autoscout24.nl/lst*"],
+      "matches": [
+        "https://www.autoscout24.nl/aanbod/*",
+        "https://www.autoscout24.nl/auto/*",
+        "https://www.autoscout24.nl/lst*",
+        "https://www.autoscout24.be/*/aanbod/*",
+        "https://www.autoscout24.be/*/annonce/*",
+        "https://www.autoscout24.be/*/auto/*",
+        "https://www.autoscout24.be/*/lst*",
+        "https://www.autoscout24.de/angebot/*",
+        "https://www.autoscout24.de/lst*",
+        "https://www.autoscout24.at/angebot/*",
+        "https://www.autoscout24.at/lst*",
+        "https://www.autoscout24.fr/annonce/*",
+        "https://www.autoscout24.fr/auto/*",
+        "https://www.autoscout24.fr/lst*",
+        "https://www.autoscout24.it/annuncio/*",
+        "https://www.autoscout24.it/auto/*",
+        "https://www.autoscout24.it/lst*",
+        "https://www.autoscout24.es/anuncio/*",
+        "https://www.autoscout24.es/auto/*",
+        "https://www.autoscout24.es/lst*",
+        "https://www.autoscout24.lu/annonce/*",
+        "https://www.autoscout24.lu/auto/*",
+        "https://www.autoscout24.lu/lst*"
+      ],
       "js": ["content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
@@ -29,7 +70,16 @@
   "web_accessible_resources": [
     {
       "resources": ["injected.js"],
-      "matches": ["https://www.autoscout24.nl/*"]
+      "matches": [
+        "https://www.autoscout24.nl/*",
+        "https://www.autoscout24.be/*",
+        "https://www.autoscout24.de/*",
+        "https://www.autoscout24.at/*",
+        "https://www.autoscout24.fr/*",
+        "https://www.autoscout24.it/*",
+        "https://www.autoscout24.es/*",
+        "https://www.autoscout24.lu/*"
+      ]
     }
   ]
 }

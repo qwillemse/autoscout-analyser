@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from datetime import datetime
 
@@ -8,6 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from countries import get_country_config
 from typing import Optional, List
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -187,22 +189,24 @@ def compute_final_verdict(diff_pct: float, confidence: dict) -> dict:
 def _build_features(car) -> dict:
     """Build feature dict matching the model's expected columns."""
     car_age = CURRENT_YEAR - car.year
+    fuel = car.fuel or "Unknown"
     return {
         "car_age":         car_age,
         "mileage":         car.mileage,
         "power_kw":        car.power_kw,
         "range_km":        car.range_km,
         "mileage_per_year": car.mileage / max(1, car_age),
-        "is_electric":     int(car.fuel == "Elektrisch"),
-        "is_hybrid":       int("Elektro/" in (car.fuel or "")),
+        "is_electric":     int(bool(re.match(r"(?i)^elektr", fuel))),
+        "is_hybrid":       int(bool(re.search(r"(?i)elektro/|hybrid|/elektr", fuel))),
         "make":            car.make,
         "model":           car.model,
         "trim_id":         car.trim_id       or "Unknown",
         "variant_id":      car.variant_id    or "Unknown",
         "generation_id":   car.generation_id or "Unknown",
-        "fuel":            car.fuel,
+        "fuel":            fuel,
         "transmission":    car.transmission,
         "seller_type":     car.seller_type   or "Unknown",
+        "country":         getattr(car, "country", None) or "NL",
     }
 
 
@@ -223,6 +227,7 @@ class CarInput(BaseModel):
     colour:        Optional[str] = None
     seller_type:   Optional[str] = None
     actual_price:  Optional[int] = None
+    country:       Optional[str] = "NL"
 
 
 class CarBatchItem(BaseModel):
@@ -242,6 +247,7 @@ class CarBatchItem(BaseModel):
     colour:        Optional[str] = None
     seller_type:   Optional[str] = None
     actual_price:  Optional[int] = None
+    country:       Optional[str] = "NL"
 
 
 # ── Privacy policy ────────────────────────────────────────────────────────────
@@ -592,6 +598,7 @@ class SimilarCarsInput(BaseModel):
     actual_price: int
     predicted_price: int
     listing_id: Optional[str] = None
+    country: Optional[str] = "NL"
 
 @app.post("/similar-cars")
 @limiter.limit("30/minute")
@@ -602,10 +609,11 @@ def similar_cars(request: Request, car: SimilarCarsInput):
         rows = con.execute("""
             SELECT id, price, year, mileage, fuel, transmission,
                    power_kw, range_km, trim_id, variant_id,
-                   generation_id, seller_type, location
+                   generation_id, seller_type, location, country
             FROM listings
             WHERE make = ? AND model = ? AND year BETWEEN ? AND ?
-        """, (car.make, car.model, car.year - 2, car.year + 2)).fetchall()
+              AND (country = ? OR country IS NULL)
+        """, (car.make, car.model, car.year - 2, car.year + 2, car.country or "NL")).fetchall()
         con.close()
     except Exception:
         return {"similar": [], "rank": None, "total": 0}
@@ -617,32 +625,37 @@ def similar_cars(request: Request, car: SimilarCarsInput):
     similar = []
     for r in rows:
         lid, price, year, mileage, fuel, transmission, power_kw, range_km, \
-            trim_id, variant_id, generation_id, seller_type, location = r
+            trim_id, variant_id, generation_id, seller_type, location, country = r
         car_age = CURRENT_YEAR - year
+        country = country or car.country or "NL"
+        fuel = fuel or "Unknown"
+        # Build URL based on country domain
+        domain = get_country_config(country)["domain"]
         similar.append({
             "id": str(lid),
             "price": price,
             "year": year,
             "mileage": mileage,
-            "fuel": fuel or "Unknown",
+            "fuel": fuel,
             "location": location or "",
-            "url": f"https://www.autoscout24.nl/aanbod/-/-{lid}",
+            "url": f"https://{domain}/aanbod/-/-{lid}",
             "_features": {
                 "car_age": car_age,
                 "mileage": mileage,
                 "power_kw": power_kw,
                 "range_km": range_km,
                 "mileage_per_year": mileage / max(1, car_age),
-                "is_electric": int(fuel == "Elektrisch"),
-                "is_hybrid": int("Elektro/" in (fuel or "")),
+                "is_electric": int(bool(re.match(r"(?i)^elektr", fuel))),
+                "is_hybrid": int(bool(re.search(r"(?i)elektro/|hybrid|/elektr", fuel))),
                 "make": car.make,
                 "model": car.model,
                 "trim_id": trim_id or "Unknown",
                 "variant_id": variant_id or "Unknown",
                 "generation_id": generation_id or "Unknown",
-                "fuel": fuel or "Unknown",
+                "fuel": fuel,
                 "transmission": transmission or "Unknown",
                 "seller_type": seller_type or "Unknown",
+                "country": country,
             },
         })
 

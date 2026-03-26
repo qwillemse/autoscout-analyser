@@ -19,7 +19,7 @@ CURRENT_YEAR = datetime.now().year
 NUMERIC   = ["car_age", "mileage", "power_kw", "range_km",
              "mileage_per_year", "is_electric", "is_hybrid"]
 HIGH_CARD = ["make", "model", "trim_id", "variant_id", "generation_id"]
-LOW_CARD  = ["fuel", "transmission", "seller_type"]
+LOW_CARD  = ["fuel", "transmission", "seller_type", "country"]
 
 # Colour is added dynamically if the column exists and has data
 
@@ -41,13 +41,20 @@ def load_and_clean() -> tuple[pd.DataFrame, pd.Series]:
               "trim_id", "variant_id", "generation_id"]:
         df[c] = df[c].fillna("Unknown")
 
+    # Country defaults to NL for existing data
+    if "country" in df.columns:
+        df["country"] = df["country"].fillna("NL")
+    else:
+        df["country"] = "NL"
+
     # Core features
     df["car_age"] = CURRENT_YEAR - df["year"]
 
     # Engineered features
     df["mileage_per_year"] = df["mileage"] / df["car_age"].clip(lower=1)
-    df["is_electric"] = (df["fuel"] == "Elektrisch").astype(int)
-    df["is_hybrid"]   = df["fuel"].str.contains("Elektro/", na=False).astype(int)
+    # Handle multi-language fuel names (NL: Elektrisch, DE: Elektro, etc.)
+    df["is_electric"] = df["fuel"].str.lower().str.contains("^elektr", na=False).astype(int)
+    df["is_hybrid"]   = df["fuel"].str.contains("Elektro/|Hybrid|hybrid|/Elektr", na=False).astype(int)
 
     # range_km and power_kw stay as NaN — XGBoost handles missing numerics
 

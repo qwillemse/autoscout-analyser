@@ -1,6 +1,33 @@
 // ── API endpoint ───────────────────────────────────────────────────────────────
 const API_URL = "https://web-production-870f.up.railway.app";
 
+// ── Country detection ─────────────────────────────────────────────────────────
+const COUNTRY_MAP = {
+  "www.autoscout24.nl": "NL",
+  "www.autoscout24.be": "BE",
+  "www.autoscout24.de": "DE",
+  "www.autoscout24.at": "AT",
+  "www.autoscout24.fr": "FR",
+  "www.autoscout24.it": "IT",
+  "www.autoscout24.es": "ES",
+  "www.autoscout24.lu": "LU",
+};
+const COUNTRY = COUNTRY_MAP[window.location.hostname] || "NL";
+
+// Per-country config for label matching
+const COUNTRY_CONFIG = {
+  NL: { powerLabels: ["Vermogen kW (PK)", "Vermogen"], rangeLabels: ["actieradius"], equipHeadings: ["Opties"], ownerKeywords: ["eigenaar", "owner"], locale: "nl-NL" },
+  BE: { powerLabels: ["Vermogen kW (PK)", "Vermogen", "Puissance kW (CH)", "Puissance"], rangeLabels: ["actieradius", "autonomie"], equipHeadings: ["Opties", "Options"], ownerKeywords: ["eigenaar", "propriétaire", "owner"], locale: "nl-BE" },
+  DE: { powerLabels: ["Leistung"], rangeLabels: ["Reichweite"], equipHeadings: ["Ausstattung"], ownerKeywords: ["Vorbesitzer", "Halter"], locale: "de-DE" },
+  AT: { powerLabels: ["Leistung"], rangeLabels: ["Reichweite"], equipHeadings: ["Ausstattung"], ownerKeywords: ["Vorbesitzer", "Halter"], locale: "de-AT" },
+  FR: { powerLabels: ["Puissance kW (CH)", "Puissance"], rangeLabels: ["autonomie"], equipHeadings: ["Équipement", "Options"], ownerKeywords: ["propriétaire"], locale: "fr-FR" },
+  IT: { powerLabels: ["Potenza kW (CV)", "Potenza"], rangeLabels: ["autonomia"], equipHeadings: ["Dotazione", "Optional"], ownerKeywords: ["proprietario"], locale: "it-IT" },
+  ES: { powerLabels: ["Potencia kW (CV)", "Potencia"], rangeLabels: ["autonomía"], equipHeadings: ["Equipamiento", "Opciones"], ownerKeywords: ["propietario"], locale: "es-ES" },
+  LU: { powerLabels: ["Puissance kW (CH)", "Puissance", "Leistung"], rangeLabels: ["autonomie", "Reichweite"], equipHeadings: ["Équipement", "Options", "Ausstattung"], ownerKeywords: ["propriétaire", "Vorbesitzer"], locale: "fr-LU" },
+};
+const CC = COUNTRY_CONFIG[COUNTRY] || COUNTRY_CONFIG.NL;
+const LOCALE = CC.locale;
+
 // ── Extract extra detail-page data (description, equipment, photos, etc.) ─────
 function extractDetailExtras() {
   try {
@@ -25,7 +52,7 @@ function extractDetailExtras() {
     const equipment = [];
     const headings = document.querySelectorAll("h2, h3");
     for (const h of headings) {
-      if (h.textContent.trim() === "Opties") {
+      if (CC.equipHeadings.includes(h.textContent.trim())) {
         let container = h.parentElement;
         for (let i = 0; i < 3; i++) {
           if (container.querySelectorAll("li, span, div").length > 10) break;
@@ -49,7 +76,7 @@ function extractDetailExtras() {
       const label = dt.textContent.trim().toLowerCase();
       const dd = dt.nextElementSibling;
       const val = dd?.textContent?.trim() ?? "";
-      if (label.includes("eigenaar") || label.includes("owner")) {
+      if (CC.ownerKeywords.some(kw => label.includes(kw))) {
         const match = val.match(/\d+/);
         if (match) previousOwners = parseInt(match[0], 10);
       }
@@ -106,12 +133,12 @@ function extractCarData() {
     let power_kw_parsed = null;
     let range_km = null;
     for (const detail of listing.vehicleDetails ?? []) {
-      if (detail.ariaLabel === "Vermogen kW (PK)") {
-        const match = detail.data?.match(/^(\d+)\s*kW/);
+      if (CC.powerLabels.some(pl => detail.ariaLabel?.includes(pl)) || detail.data?.includes("kW")) {
+        const match = detail.data?.match(/(\d+)\s*kW/);
         if (match) power_kw_parsed = parseInt(match[1], 10);
-      } else if (detail.ariaLabel === "actieradius") {
-        const match = detail.data?.match(/^(\d+)/);
-        if (match) range_km = parseInt(match[1], 10);
+      } else if (CC.rangeLabels.some(rl => detail.ariaLabel?.includes(rl))) {
+        const match = detail.data?.match(/^(\d[\d.]*)/);
+        if (match) range_km = parseInt(match[1].replace(".", ""), 10);
       }
     }
 
@@ -132,6 +159,7 @@ function extractCarData() {
       colour,
       seller_type,
       actual_price: price,
+      country: COUNTRY,
     };
   } catch (e) {
     console.error("[AutoAnalyser] Failed to extract car data:", e);
@@ -170,8 +198,8 @@ async function fetchPrediction(carData) {
 function getOutOfRangeWarning(carData) {
   const reasons = [];
   if (carData.year < 2005)              reasons.push(`year ${carData.year} (model trained on 2005+)`);
-  if (carData.mileage > 250_000)        reasons.push(`${carData.mileage.toLocaleString("nl-NL")} km (model trained up to 250,000 km)`);
-  if (carData.actual_price > 150_000)   reasons.push(`asking price €${carData.actual_price.toLocaleString("nl-NL")} (model trained up to €150,000)`);
+  if (carData.mileage > 250_000)        reasons.push(`${carData.mileage.toLocaleString(LOCALE)} km (model trained up to 250,000 km)`);
+  if (carData.actual_price > 150_000)   reasons.push(`asking price €${carData.actual_price.toLocaleString(LOCALE)} (model trained up to €150,000)`);
   return reasons.length ? reasons : null;
 }
 
@@ -196,7 +224,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
   const v = verdictConfig[getVerdictCategory(final_verdict)] ?? verdictConfig.fair;
 
   const fv    = final_verdict ?? { label: "Unknown", color: "#2563eb" };
-  const fmt   = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
+  const fmt   = (n) => "€" + Math.abs(n).toLocaleString(LOCALE);
   const sign  = diff_eur > 0 ? "+" : "-";
 
   // Use detailCarData for display metadata (richer info on the detail page)
@@ -263,10 +291,10 @@ function buildSidebar(carData, result, stats, detailCarData) {
     <div id="as24-similar-cars-wrap"></div>
     <div class="as24-meta">
       <div>${displayData.make} ${displayData.model} · ${displayData.year}</div>
-      <div>${displayData.mileage.toLocaleString("nl-NL")} km${displayData.power_kw ? ` · ${displayData.power_kw} kW` : ""}</div>
+      <div>${displayData.mileage.toLocaleString(LOCALE)} km${displayData.power_kw ? ` · ${displayData.power_kw} kW` : ""}</div>
       <div>${displayData.fuel} · ${displayData.transmission}</div>
     </div>
-    <div class="as24-footer">Based on ${stats ? stats.listing_count.toLocaleString("nl-NL") : "~12k"} NL listings</div>
+    <div class="as24-footer">Based on ${stats ? stats.listing_count.toLocaleString(LOCALE) : "~12k"} listings</div>
   `;
 
   document.body.appendChild(sidebar);
@@ -304,6 +332,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
           previous_owners:  extras.previous_owners ?? null,
           photo_count:      extras.photo_count ?? null,
           apk_date:         extras.apk_date ?? null,
+          country:          COUNTRY,
         }),
       })
         .then(r => r.json())
@@ -333,9 +362,10 @@ function buildSidebar(carData, result, stats, detailCarData) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          make:  displayData.make,
-          model: displayData.model,
-          year:  displayData.year,
+          make:    displayData.make,
+          model:   displayData.model,
+          year:    displayData.year,
+          country: COUNTRY,
         }),
       })
         .then(r => r.json())
@@ -345,7 +375,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
           const last  = data.trend[data.trend.length - 1];
           const diff  = last.avg_price - first.avg_price;
           if (diff === 0) return;
-          const fmt = (n) => "€" + Math.abs(n).toLocaleString("nl-NL");
+          const fmt = (n) => "€" + Math.abs(n).toLocaleString(LOCALE);
           const arrow = diff < 0 ? "↓" : "↑";
           const color = diff < 0 ? "#16a34a" : "#dc2626";
           histWrap.innerHTML = `<div class="as24-price-history">
@@ -369,12 +399,13 @@ function buildSidebar(carData, result, stats, detailCarData) {
           actual_price:    actual_price,
           predicted_price: predicted_price,
           listing_id:      displayData.listing_id ?? null,
+          country:         COUNTRY,
         }),
       })
         .then(r => r.json())
         .then(data => {
           if (!data.similar || !data.similar.length) return;
-          const fmt = (n) => "€" + n.toLocaleString("nl-NL");
+          const fmt = (n) => "€" + n.toLocaleString(LOCALE);
           const rankText = data.rank ? `#${data.rank} of ${data.total} similar listings by deal` : "";
           let html = `<div class="as24-similar">`;
           if (rankText) html += `<div class="as24-similar-rank">${rankText}</div>`;
@@ -384,7 +415,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
             const color = diffPct < -10 ? "#16a34a" : diffPct > 10 ? "#dc2626" : "#2563eb";
             html += `<a href="${car.url}" target="_blank" class="as24-similar-item">
               <span class="as24-similar-price">${fmt(car.price)}</span>
-              <span class="as24-similar-details">${car.mileage.toLocaleString("nl-NL")} km · ${car.year}</span>
+              <span class="as24-similar-details">${car.mileage.toLocaleString(LOCALE)} km · ${car.year}</span>
               <span class="as24-similar-diff" style="color:${color}">${diffPct > 0 ? "+" : ""}${diffPct}%</span>
             </a>`;
           }
@@ -423,12 +454,12 @@ function parseListings(listings) {
       let power_kw = null;
       let range_km = null;
       for (const detail of item.vehicleDetails ?? []) {
-        if (detail.ariaLabel === "Vermogen kW (PK)") {
-          const match = detail.data?.match(/^(\d+)\s*kW/);
+        if (CC.powerLabels.some(pl => detail.ariaLabel?.includes(pl)) || detail.data?.includes("kW")) {
+          const match = detail.data?.match(/(\d+)\s*kW/);
           if (match) power_kw = parseInt(match[1], 10);
-        } else if (detail.ariaLabel === "actieradius") {
-          const match = detail.data?.match(/^(\d+)/);
-          if (match) range_km = parseInt(match[1], 10);
+        } else if (CC.rangeLabels.some(rl => detail.ariaLabel?.includes(rl))) {
+          const match = detail.data?.match(/^(\d[\d.]*)/);
+          if (match) range_km = parseInt(match[1].replace(".", ""), 10);
         }
       }
 
@@ -447,7 +478,7 @@ function parseListings(listings) {
         id: item.id, make: vehicle.make, model: vehicle.model, year, mileage,
         fuel: vehicle.fuel ?? "Unknown", transmission: vehicle.transmission ?? "Unknown",
         power_kw, range_km, trim_id, variant_id, generation_id, body_type, colour, seller_type,
-        actual_price: price,
+        actual_price: price, country: COUNTRY,
       }];
     } catch { return []; }
   });
@@ -483,7 +514,7 @@ function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence, c
   const card = link.closest("article") ?? link.closest("[data-testid]") ?? link.parentElement;
   if (!card || card.querySelector(".as24-badge")) return;
 
-  const fmt = (n) => "€" + n.toLocaleString("nl-NL");
+  const fmt = (n) => "€" + n.toLocaleString(LOCALE);
 
   // Map final_verdict color to badge CSS class (green/red/blue)
   const GREEN_COLORS = new Set(["#16a34a", "#65a30d", "#84cc16"]);
