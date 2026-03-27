@@ -262,10 +262,19 @@ function buildSidebar(carData, result, stats, detailCarData) {
       <span class="as24-verdict-label">${fv.label}</span>
     </div>
     <div class="as24-rows">
-      <div class="as24-row">
-        <span class="as24-label">Predicted</span>
-        <span class="as24-value">${fmt(predicted_price)}</span>
-      </div>
+      ${(() => {
+        const spread = confidence?.spread_pct ?? 25;
+        const lo = Math.round(predicted_price * (1 - spread / 100));
+        const hi = Math.round(predicted_price * (1 + spread / 100));
+        const sampleText = confidence?.sample_count ? `Based on ${confidence.sample_count} similar cars` : "";
+        return `
+          <div class="as24-row">
+            <span class="as24-label">Market value</span>
+            <span class="as24-value">${fmt(lo)} – ${fmt(hi)}</span>
+          </div>
+          <div class="as24-row-sub">likely around ${fmt(predicted_price)}</div>
+        `;
+      })()}
       <div class="as24-row">
         <span class="as24-label">Asked</span>
         <span class="as24-value">${fmt(actual_price)}</span>
@@ -274,16 +283,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
         <span class="as24-label">Difference</span>
         <span class="as24-value" style="color:${v.color};">${sign}${fmt(diff_eur)} (${diff_pct > 0 ? "+" : ""}${diff_pct}%)</span>
       </div>
-      ${confidence ? (() => {
-        const { spread_pct, sample_count, level, label } = confidence;
-        const pctText = spread_pct !== null ? ` (±${spread_pct}%)` : "";
-        return `<div class="as24-row">
-          <span class="as24-label">Confidence</span>
-          <span class="as24-value as24-confidence as24-confidence--${level}">${label}${pctText}
-            <span class="as24-confidence-sub">${sample_count} similar cars</span>
-          </span>
-        </div>`;
-      })() : ""}
+      ${confidence?.sample_count ? `<div class="as24-row-sub" style="text-align:right; margin-top:2px;">${confidence.sample_count} similar cars</div>` : ""}
     </div>
     <div id="as24-explanation-wrap"></div>
     <div id="as24-explanation-toggle" style="display:none"></div>
