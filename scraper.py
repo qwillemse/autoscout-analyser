@@ -7,6 +7,42 @@ import requests
 from config import PARAMS, HEADERS
 from countries import get_country_config
 
+# ── Normalize fuel/transmission across languages ─────────────────────────────
+FUEL_MAP = {
+    # DE
+    "Benzin": "Benzine", "Elektro": "Elektrisch", "Elektro/Benzin": "Elektro/Benzine",
+    "Elektro/Diesel": "Elektro/Diesel", "Autogas (LPG)": "LPG", "Erdgas (CNG)": "CNG",
+    "Wasserstoff": "Waterstof", "Sonstige": "Overig",
+    # BE
+    "Elektrisch/Benzine": "Elektro/Benzine", "Elektrisch/Diesel": "Elektro/Diesel",
+    "Andere": "Overig",
+    # FR
+    "Essence": "Benzine", "Électrique": "Elektrisch", "Électrique/Essence": "Elektro/Benzine",
+    "Électrique/Diesel": "Elektro/Diesel", "Hydrogène": "Waterstof", "Autres": "Overig",
+    # IT
+    "Benzina": "Benzine", "Elettrica": "Elektrisch", "Elettrica/Benzina": "Elektro/Benzine",
+    "Elettrica/Diesel": "Elektro/Diesel", "Idrogeno": "Waterstof", "Altro": "Overig",
+    # ES
+    "Gasolina": "Benzine", "Eléctrico": "Elektrisch", "Eléctrico/Gasolina": "Elektro/Benzine",
+    "Eléctrico/Diésel": "Elektro/Diesel", "Hidrógeno": "Waterstof", "Otros": "Overig",
+}
+
+TRANSMISSION_MAP = {
+    # DE
+    "Automatik": "Automatisch", "Schaltgetriebe": "Handgeschakeld", "Halbautomatik": "Half/Semi-automaat",
+    # BE
+    "Manueel": "Handgeschakeld", "Halfautomaat": "Half/Semi-automaat",
+    # FR
+    "Automatique": "Automatisch", "Manuelle": "Handgeschakeld", "Semi-automatique": "Half/Semi-automaat",
+    # IT
+    "Automatico": "Automatisch", "Manuale": "Handgeschakeld", "Semiautomatico": "Half/Semi-automaat",
+    # ES
+    "Automático": "Automatisch", "Manual": "Handgeschakeld", "Semiautomático": "Half/Semi-automaat",
+}
+
+def normalize_fuel(raw): return FUEL_MAP.get(raw, raw)
+def normalize_transmission(raw): return TRANSMISSION_MAP.get(raw, raw)
+
 
 
 def scrape_page(make: str, page: int, country: str = "NL",
@@ -97,8 +133,8 @@ def scrape_page(make: str, page: int, country: str = "NL",
             "model": model,
             "year": year,
             "mileage": mileage,
-            "fuel": item.get("vehicle", {}).get("fuel"),
-            "transmission": item.get("vehicle", {}).get("transmission"),
+            "fuel": normalize_fuel(item.get("vehicle", {}).get("fuel")),
+            "transmission": normalize_transmission(item.get("vehicle", {}).get("transmission")),
             "price": price,
             "location": item.get("location", {}).get("city"),
             "power_kw": power_kw,

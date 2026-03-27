@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-27T11:45:07.119250",
+  "timestamp": "2026-03-27T12:34:03.829566",
   "rows": 314837,
   "features": [
     "car_age",
@@ -19,8 +19,8 @@
     "seller_type",
     "country"
   ],
-  "mae_mean": 2186,
-  "mae_std": 7,
+  "mae_mean": 2188,
+  "mae_std": 10,
   "mape_mean": 10.56,
   "mape_std": 0.2,
   "median_price": 21494
