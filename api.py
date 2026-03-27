@@ -194,7 +194,7 @@ def _build_features(car) -> dict:
         "fuel":            fuel,
         "transmission":    car.transmission,
         "seller_type":     car.seller_type   or "Unknown",
-        "country":         getattr(car, "country", None) or "NL",
+        "country":         (getattr(car, "country", None) or "NL").upper(),
     }
 
 
@@ -636,6 +636,7 @@ class SimilarCarsInput(BaseModel):
 @limiter.limit("30/minute")
 def similar_cars(request: Request, car: SimilarCarsInput):
     """Find similar listings and rank by best deal (actual vs predicted price)."""
+    country_upper = (car.country or "NL").upper()
     try:
         con = sqlite3.connect(DB_PATH)
         rows = con.execute("""
@@ -645,7 +646,7 @@ def similar_cars(request: Request, car: SimilarCarsInput):
             FROM listings
             WHERE make = ? AND model = ? AND year BETWEEN ? AND ?
               AND (country = ? OR country IS NULL)
-        """, (car.make, car.model, car.year - 2, car.year + 2, car.country or "NL")).fetchall()
+        """, (car.make, car.model, car.year - 2, car.year + 2, country_upper)).fetchall()
         con.close()
     except Exception:
         return {"similar": [], "rank": None, "total": 0}
