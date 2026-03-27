@@ -300,6 +300,12 @@ def privacy():
 </html>"""
 
 
+# ── Health check (always returns 200 so Railway can start) ────────────────────
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
 # ── Stats endpoint ────────────────────────────────────────────────────────────
 @app.get("/stats")
 def stats():
