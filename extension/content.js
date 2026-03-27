@@ -488,16 +488,14 @@ function extractSearchListings(preferSPA = false) {
     return result;
   }
 
-  // 2. __NEXT_DATA__ — populated on full page load only
-  if (!preferSPA) {
-    try {
-      const script = document.getElementById("__NEXT_DATA__");
-      if (script) {
-        const listings = JSON.parse(script.textContent)?.props?.pageProps?.listings ?? [];
-        if (listings.length) return parseListings(listings);
-      }
-    } catch {}
-  }
+  // 2. __NEXT_DATA__ — works on full page load and back navigation
+  try {
+    const script = document.getElementById("__NEXT_DATA__");
+    if (script) {
+      const listings = JSON.parse(script.textContent)?.props?.pageProps?.listings ?? [];
+      if (listings.length) return parseListings(listings);
+    }
+  } catch {}
 
   return [];
 }
@@ -676,6 +674,7 @@ main();
 
 // Re-run on back/forward navigation (SPA popstate)
 window.addEventListener("popstate", () => {
+  _lastSearchUrl = null;  // reset dedup so badges re-inject
   setTimeout(() => main(true), 500);
 });
 
