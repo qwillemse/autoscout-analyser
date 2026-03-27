@@ -563,6 +563,9 @@ async function main(isSPA = false) {
   const isSearchPage = /(?:^|\/)lst/.test(window.location.pathname);
 
   if (isSearchPage) {
+    // Remove sidebar if navigating back from detail page
+    document.getElementById("as24-analyser-sidebar")?.remove();
+
     // Deduplicate: skip same URL re-runs on initial load, but always allow SPA navs
     const currentUrl = window.location.href;
     if (!isSPA && currentUrl === _lastSearchUrl) return;
@@ -670,3 +673,20 @@ async function main(isSPA = false) {
 }
 
 main();
+
+// Re-run on back/forward navigation (SPA popstate)
+window.addEventListener("popstate", () => {
+  setTimeout(() => main(true), 500);
+});
+
+// Watch for URL changes that don't trigger popstate (Next.js pushState)
+let _lastUrl = window.location.href;
+const _urlObserver = new MutationObserver(() => {
+  if (window.location.href !== _lastUrl) {
+    _lastUrl = window.location.href;
+    setTimeout(() => main(true), 500);
+  }
+});
+_urlObserver.observe(document.querySelector("head > title") || document.head, {
+  childList: true, subtree: true, characterData: true,
+});
