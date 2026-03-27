@@ -378,13 +378,13 @@ class ExplainInput(BaseModel):
     actual_price:     int
     diff_pct:         float
     confidence_level: Optional[str] = None
-    sample_count:     Optional[int] = None
-    spread_pct:       Optional[float] = None
+    range_pct:        Optional[float] = None
     description:      Optional[str] = None
     equipment:        Optional[list[str]] = None
     photo_count:      Optional[int] = None
     previous_owners:  Optional[int] = None
     apk_date:         Optional[str] = None
+    country:          Optional[str] = "nl"
 
 @app.post("/explain")
 @limiter.limit("10/minute")
@@ -425,7 +425,50 @@ def explain(request: Request, data: ExplainInput):
             parts.append(f"- Seller description: {desc}")
         listing_details = "\n\nListing details:\n" + "\n".join(parts)
 
-    prompt = f"""You are a used car pricing expert for the Dutch market (AutoScout24 NL).
+    # Country-specific context
+    country_code = (data.country or "nl").lower()
+    country_names = {"nl": "Dutch", "de": "German", "be": "Belgian", "at": "Austrian",
+                     "fr": "French", "it": "Italian", "es": "Spanish", "lu": "Luxembourg"}
+    country_name = country_names.get(country_code, "European")
+    site_suffix = {"nl": "NL", "de": "DE", "be": "BE", "at": "AT",
+                   "fr": "FR", "it": "IT", "es": "ES", "lu": "LU"}.get(country_code, "NL")
+
+    # Range info
+    range_text = f"±{data.range_pct}% (80% of similar cars fall within this range)" if data.range_pct else ""
+    confidence_text = f"{data.confidence_level}" if data.confidence_level else "unknown"
+    if range_text:
+        confidence_text += f" — {range_text}"
+
+    # Description context per country
+    desc_context = ""
+    if listing_details:
+        if country_code == "nl":
+            desc_context = """
+IMPORTANT — Dutch market context for reading descriptions:
+- "Eerste eigenaar in Nederland" means first DUTCH owner — the car was likely imported and had previous owners abroad. This is normal and NOT suspicious.
+- "Sinds [year] ~X km" means the current owner drove X km since that year, NOT that total mileage is X km. The total mileage is always the number shown in the listing specs above.
+- Replaced odometer/tellerunit means the DISPLAYED mileage may be wrong — the description usually states the real mileage. This IS a warning.
+- "Export", "schade" (damage), "niet rijdend" (not drivable), missing APK are genuine warnings."""
+        elif country_code == "de":
+            desc_context = """
+IMPORTANT — German market context for reading descriptions:
+- "Unfallfahrzeug" or "Unfallwagen" means accident/damaged vehicle — this IS a warning.
+- "Bastlerfahrzeug" or "für Bastler" means it needs significant work — warning.
+- "Export" means the car is sold for export only, often with issues.
+- "HU/AU neu" or "TÜV neu" means freshly inspected — positive sign.
+- "Scheckheftgepflegt" means full dealer service history — positive.
+- "Vorbesitzer" = previous owners. "1. Hand" = first owner."""
+        elif country_code == "be":
+            desc_context = """
+IMPORTANT — Belgian market context for reading descriptions:
+- Belgium has NL and FR speaking regions. Descriptions may be in Dutch or French.
+- "Eerste eigenaar" / "Premier propriétaire" = first owner.
+- "Ongevalvrij" / "Sans accident" = no accidents — positive.
+- "Keuring geldig" / "Contrôle technique valable" = valid inspection — positive.
+- "Schade" / "Dommage" = damage — warning.
+- Cars in Belgium are often cheaper due to tax structures."""
+
+    prompt = f"""You are a used car pricing expert for the {country_name} market (AutoScout24 {site_suffix}).
 
 Car details:
 - {data.make} {data.model}, {data.year} ({car_age} years old)
@@ -439,20 +482,15 @@ Pricing:
 - Difference: {data.diff_pct:+.1f}% ({"seller asks less than predicted" if data.diff_pct < 0 else "seller asks more than predicted"})
 {f"- Average {data.make} {data.model} ({data.year-2}–{data.year+2}) in our database: €{avg_price:,}" if avg_price else ""}
 
-Prediction confidence: {data.confidence_level or "unknown"}{f" (±{data.spread_pct}%, based on {data.sample_count} similar cars)" if data.sample_count else ""}
+Prediction accuracy: {confidence_text}
 {listing_details}
 
-Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, fuel type trends in the Dutch market, and prediction confidence. If confidence is low, mention that the estimate is less reliable.
+Write 2-3 concise sentences explaining why this car might be {"underpriced (a good deal)" if data.diff_pct < 0 else "overpriced"} or whether the price seems {"justified despite being below" if data.diff_pct < 0 else "justified despite being above"} the predicted value. Consider mileage relative to age, model popularity, and fuel type trends in the {country_name} market. If prediction accuracy is low, mention that the estimate is less reliable.
+{desc_context}
 
-{'''IMPORTANT — Dutch market context for reading descriptions:
-- "Eerste eigenaar in Nederland" means first DUTCH owner — the car was likely imported and had previous owners abroad. This is normal and NOT suspicious.
-- "Sinds [year] ~X km" means the current owner drove X km since that year, NOT that total mileage is X km. The total mileage is always the number shown in the listing specs above.
-- Replaced odometer/tellerunit means the DISPLAYED mileage may be wrong — the description usually states the real mileage. This IS a warning.
-- "Export", "schade" (damage), "niet rijdend" (not drivable), missing APK are genuine warnings.
+Only start with "⚠️ Warning:" if there is a GENUINE concern like: replaced odometer with different actual mileage than listed, undisclosed damage, accidents, export-only status, or missing inspection. Do NOT warn about normal import history or partial ownership details.
 
-Only start with "⚠️ Warning:" if there is a GENUINE concern like: replaced odometer with different actual mileage than listed, undisclosed damage, accidents, export-only status, or missing APK. Do NOT warn about normal import history or partial ownership details.
-
-''' if listing_details else ""}{"Reference specific details from the listing description or equipment where relevant. Mention notable issues (known defects, missing maintenance) and positives (full service history, new parts)." if listing_details else ""} Be direct and helpful — this is for a car buyer."""
+{"Reference specific details from the listing description or equipment where relevant. Mention notable issues (known defects, missing maintenance) and positives (full service history, new parts)." if listing_details else ""} Be direct and helpful — this is for a car buyer. Write in English."""
 
     try:
         client = get_openai()
