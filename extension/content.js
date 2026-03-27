@@ -177,7 +177,7 @@ let _lastSearchUrl = null;
 document.addEventListener("__as24_spa_listings__", (e) => {
   _spaListings = e.detail;
   // Delay slightly so React has time to render the new listing cards into the DOM
-  if (window.location.pathname.startsWith("/lst")) {
+  if (/(?:^|\/)lst/.test(window.location.pathname)) {
     setTimeout(() => main(true), 400);
   }
 });
@@ -565,7 +565,7 @@ function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence, c
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 async function main(isSPA = false) {
-  const isSearchPage = window.location.pathname.startsWith("/lst");
+  const isSearchPage = /(?:^|\/)lst/.test(window.location.pathname);
 
   if (isSearchPage) {
     // Deduplicate: skip same URL re-runs on initial load, but always allow SPA navs
