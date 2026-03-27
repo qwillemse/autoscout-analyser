@@ -690,3 +690,41 @@ def similar_cars(request: Request, car: SimilarCarsInput):
         "rank": rank,
         "total": total,
     }
+
+
+# ── Temporary file upload endpoint ───────────────────────────────────────────
+# Upload cars.db or pipeline.joblib to the server.
+# Protected by a simple secret token via UPLOAD_SECRET env var.
+# Remove this endpoint once you have a proper deployment pipeline.
+from fastapi import UploadFile, File, Header
+import shutil
+
+UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET", "")
+
+@app.post("/upload/{filename}")
+async def upload_file(
+    filename: str,
+    file: UploadFile = File(...),
+    authorization: str = Header(None),
+):
+    if not UPLOAD_SECRET or authorization != f"Bearer {UPLOAD_SECRET}":
+        raise HTTPException(status_code=403, detail="Invalid or missing UPLOAD_SECRET")
+
+    allowed = {"cars.db": DB_PATH, "pipeline.joblib": MODEL_PATH}
+    if filename not in allowed:
+        raise HTTPException(status_code=400, detail=f"Only {list(allowed.keys())} allowed")
+
+    dest = allowed[filename]
+    # Write to a temp file first, then move atomically
+    tmp = dest + ".tmp"
+    with open(tmp, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    os.replace(tmp, dest)
+
+    # Reload model if pipeline was updated
+    if filename == "pipeline.joblib":
+        global _pipeline
+        _pipeline = None  # force reload on next request
+
+    size_mb = os.path.getsize(dest) / (1024 * 1024)
+    return {"status": "ok", "file": filename, "size_mb": round(size_mb, 1), "path": dest}
