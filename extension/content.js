@@ -239,13 +239,11 @@ function buildSidebar(carData, result, stats, detailCarData) {
 
   // Low-confidence warning (separate from out-of-range)
   let lowConfHtml = "";
+  const rangePct = confidence?.range_pct ?? confidence?.spread_pct;
   if (confidence?.level === "low") {
-    const reason = confidence.sample_count < 10
-      ? `Only ${confidence.sample_count} similar car${confidence.sample_count === 1 ? "" : "s"} in our database.`
-      : `Prices for similar cars vary widely (±${confidence.spread_pct}%).`;
     lowConfHtml = `
       <div class="as24-warning">
-        ⚠️ Low confidence — ${reason} Take this estimate with caution.
+        ⚠️ Low confidence — Prices for similar cars vary widely (±${rangePct}%). Take this estimate with caution.
       </div>`;
   }
 
@@ -263,10 +261,9 @@ function buildSidebar(carData, result, stats, detailCarData) {
     </div>
     <div class="as24-rows">
       ${(() => {
-        const spread = confidence?.spread_pct ?? 25;
-        const lo = Math.round(predicted_price * (1 - spread / 100));
-        const hi = Math.round(predicted_price * (1 + spread / 100));
-        const sampleText = confidence?.sample_count ? `Based on ${confidence.sample_count} similar cars` : "";
+        const range = rangePct ?? 12;
+        const lo = Math.round(predicted_price * (1 - range / 100));
+        const hi = Math.round(predicted_price * (1 + range / 100));
         return `
           <div class="as24-row">
             <span class="as24-label">Market value</span>
@@ -283,7 +280,6 @@ function buildSidebar(carData, result, stats, detailCarData) {
         <span class="as24-label">Difference</span>
         <span class="as24-value" style="color:${v.color};">${sign}${fmt(diff_eur)} (${diff_pct > 0 ? "+" : ""}${diff_pct}%)</span>
       </div>
-      ${confidence?.sample_count ? `<div class="as24-row-sub" style="text-align:right; margin-top:2px;">${confidence.sample_count} similar cars</div>` : ""}
     </div>
     <div id="as24-explanation-wrap"></div>
     <div id="as24-explanation-toggle" style="display:none"></div>

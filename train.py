@@ -138,11 +138,74 @@ def evaluate(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series):
     print("Results saved to train_results.json")
 
 
+def build_range_lookup(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series):
+    """Compute per-car prediction error ranges for confidence display.
+
+    Creates a 3-tier fallback lookup:
+      1. trim_id (most specific, needs ≥20 samples)
+      2. make + model
+      3. make only
+      4. global fallback
+
+    Each entry stores the 80th percentile of |error_%|, meaning ~80% of
+    actual prices fall within ±p80% of the predicted price.
+    """
+    predicted = np.expm1(pipeline.predict(X))
+    actuals   = np.expm1(y)
+    abs_err   = np.abs((actuals - predicted) / predicted * 100)
+
+    df_err = X[["make", "model", "trim_id"]].copy()
+    df_err["abs_error_pct"] = abs_err.values
+
+    MIN_SAMPLES = 20
+
+    # Tier 1: trim_id
+    trim_grp = (df_err[df_err["trim_id"] != "Unknown"]
+                .groupby("trim_id")["abs_error_pct"]
+                .agg(count="count", p80=lambda x: np.percentile(x, 80))
+                .reset_index())
+    trim_lookup = {r["trim_id"]: round(r["p80"], 1)
+                   for _, r in trim_grp.iterrows() if r["count"] >= MIN_SAMPLES}
+
+    # Tier 2: make + model
+    mm_grp = (df_err.groupby(["make", "model"])["abs_error_pct"]
+              .agg(count="count", p80=lambda x: np.percentile(x, 80))
+              .reset_index())
+    mm_lookup = {(r["make"], r["model"]): round(r["p80"], 1)
+                 for _, r in mm_grp.iterrows() if r["count"] >= MIN_SAMPLES}
+
+    # Tier 3: make
+    make_grp = (df_err.groupby("make")["abs_error_pct"]
+                .agg(p80=lambda x: np.percentile(x, 80))
+                .reset_index())
+    make_lookup = {r["make"]: round(r["p80"], 1) for _, r in make_grp.iterrows()}
+
+    # Tier 4: global
+    global_p80 = round(float(np.percentile(abs_err, 80)), 1)
+
+    lookup = {
+        "trim":    trim_lookup,
+        "model":   {f"{k[0]}|{k[1]}": v for k, v in mm_lookup.items()},
+        "make":    make_lookup,
+        "global":  global_p80,
+    }
+
+    with open("range_lookup.json", "w") as f:
+        json.dump(lookup, f)
+    print(f"\nRange lookup saved: {len(trim_lookup)} trims, "
+          f"{len(mm_lookup)} make+models, {len(make_lookup)} makes, "
+          f"global={global_p80}%")
+    return lookup
+
+
 def train_and_save(pipeline: Pipeline, X: pd.DataFrame, y: pd.Series):
     print("\nTraining on full dataset...")
     pipeline.fit(X, y)
     joblib.dump(pipeline, "pipeline.joblib")
     print("Saved pipeline.joblib")
+
+    # Build range lookup from training residuals
+    build_range_lookup(pipeline, X, y)
 
     # Feature importance
     model = pipeline.named_steps["model"]
