@@ -743,7 +743,8 @@ async def upload_file(
     if not UPLOAD_SECRET or authorization != f"Bearer {UPLOAD_SECRET}":
         raise HTTPException(status_code=403, detail="Invalid or missing UPLOAD_SECRET")
 
-    allowed = {"cars.db": DB_PATH, "pipeline.joblib": MODEL_PATH}
+    range_path = os.path.join(os.path.dirname(MODEL_PATH), "range_lookup.json")
+    allowed = {"cars.db": DB_PATH, "pipeline.joblib": MODEL_PATH, "range_lookup.json": range_path}
     if filename not in allowed:
         raise HTTPException(status_code=400, detail=f"Only {list(allowed.keys())} allowed")
 
