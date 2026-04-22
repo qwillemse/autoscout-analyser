@@ -1,0 +1,65 @@
+name: Weekly scrape + retrain
+
+on:
+  schedule:
+    # Every Sunday at 02:00 UTC (slow hours for AutoScout24)
+    - cron: '0 2 * * 0'
+  # Also allow manual triggering from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  scrape-train-deploy:
+    runs-on: ubuntu-latest
+    # GitHub Actions free tier job limit is 6h — scraping + training fits
+    timeout-minutes: 350
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Scrape NL + DE + BE
+        run: python main.py --scrape --countries NL DE BE
+        env:
+          DB_PATH: ./cars.db
+
+      - name: Retrain model
+        run: python train.py
+        env:
+          DB_PATH: ./cars.db
+
+      - name: Upload pipeline.joblib to Railway
+        run: |
+          curl -fsS -X POST "${{ secrets.API_URL }}/upload/pipeline.joblib" \
+            -H "Authorization: Bearer ${{ secrets.UPLOAD_SECRET }}" \
+            -F "file=@pipeline.joblib"
+
+      - name: Upload cars.db to Railway
+        run: |
+          curl -fsS -X POST "${{ secrets.API_URL }}/upload/cars.db" \
+            -H "Authorization: Bearer ${{ secrets.UPLOAD_SECRET }}" \
+            -F "file=@cars.db"
+
+      - name: Upload range_lookup.json to Railway
+        run: |
+          curl -fsS -X POST "${{ secrets.API_URL }}/upload/range_lookup.json" \
+            -H "Authorization: Bearer ${{ secrets.UPLOAD_SECRET }}" \
+            -F "file=@range_lookup.json"
+
+      - name: Summary
+        run: |
+          echo "### Weekly scrape + retrain complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f train_results.json ]; then
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat train_results.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
