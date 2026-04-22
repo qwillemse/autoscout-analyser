@@ -141,6 +141,40 @@
   color: #374151;
   margin-bottom: 6px;
 }
+
+/* Review prompt (shown after 5 analyses) */
+.as24-review-prompt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #fffbeb;
+  border-top: 1px solid #fde68a;
+  border-bottom: 1px solid #fde68a;
+  font-size: 12px;
+  color: #92400e;
+}
+.as24-review-prompt a {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+  flex: 1;
+}
+.as24-review-prompt a:hover {
+  text-decoration: underline;
+}
+.as24-review-prompt button {
+  background: none;
+  border: none;
+  color: #92400e;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 4px;
+  opacity: 0.6;
+}
+.as24-review-prompt button:hover {
+  opacity: 1;
+}
 .as24-similar-warning {
   font-size: 10px;
   color: #92400e;

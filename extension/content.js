@@ -290,6 +290,7 @@ function buildSidebar(carData, result, stats, detailCarData) {
       <div>${displayData.mileage.toLocaleString(LOCALE)} km${displayData.power_kw ? ` · ${displayData.power_kw} kW` : ""}</div>
       <div>${displayData.fuel} · ${displayData.transmission}</div>
     </div>
+    <div id="as24-review-prompt-wrap"></div>
     <div class="as24-footer">Based on ${stats ? stats.listing_count.toLocaleString(LOCALE) : "~12k"} listings</div>
   `;
 
@@ -298,6 +299,38 @@ function buildSidebar(carData, result, stats, detailCarData) {
   document.getElementById("as24-close-btn").addEventListener("click", () => {
     sidebar.remove();
   });
+
+  // Review prompt: show after 5 detail-page analyses, unless user dismissed
+  if (detailCarData) {
+    try {
+      const state = localStorage.getItem("as24_review_state"); // "dismissed" | "clicked" | null
+      if (state !== "dismissed" && state !== "clicked") {
+        const count = parseInt(localStorage.getItem("as24_analyses") || "0", 10) + 1;
+        localStorage.setItem("as24_analyses", String(count));
+        if (count >= 5) {
+          const wrap = document.getElementById("as24-review-prompt-wrap");
+          if (wrap) {
+            wrap.innerHTML = `
+              <div class="as24-review-prompt">
+                <span>Enjoying this? 🙏</span>
+                <a href="https://chromewebstore.google.com/detail/pimekakenahncahcbeckihhcdceldkfi/reviews" target="_blank" id="as24-review-btn">Leave a review</a>
+                <button id="as24-review-dismiss" title="Dismiss">✕</button>
+              </div>
+            `;
+            document.getElementById("as24-review-btn").addEventListener("click", () => {
+              localStorage.setItem("as24_review_state", "clicked");
+              wrap.innerHTML = "";
+            });
+            document.getElementById("as24-review-dismiss").addEventListener("click", (e) => {
+              e.preventDefault();
+              localStorage.setItem("as24_review_state", "dismissed");
+              wrap.innerHTML = "";
+            });
+          }
+        }
+      }
+    } catch {}
+  }
 
   // Detail page features (free for all users)
   if (detailCarData) {
