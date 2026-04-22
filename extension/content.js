@@ -715,6 +715,18 @@ window.addEventListener("popstate", () => {
   setTimeout(() => main(true), 500);
 });
 
+// Re-run on pushState navigation (e.g. homepage → search page).
+// Next.js uses history.pushState which doesn't fire popstate, so we
+// monitor URL changes explicitly.
+let _lastUrl = window.location.href;
+setInterval(() => {
+  if (window.location.href !== _lastUrl) {
+    _lastUrl = window.location.href;
+    _lastSearchUrl = null;  // reset dedup
+    setTimeout(() => main(true), 500);
+  }
+}, 500);
+
 // Watch for URL changes that don't trigger popstate (Next.js pushState)
 let _lastUrl = window.location.href;
 const _urlObserver = new MutationObserver(() => {
