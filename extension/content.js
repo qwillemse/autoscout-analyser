@@ -380,32 +380,54 @@ function buildSidebar(carData, result, stats, detailCarData) {
         .catch(() => {});
     }
 
-    // 3. Fetch similar cars ranking
+    // 3. Fetch similar cars ranking (with live-check to filter out sold listings)
     const similarWrap = document.getElementById("as24-similar-cars-wrap");
     if (similarWrap) {
-      fetch(`${API_URL}/similar-cars`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          make:            displayData.make,
-          model:           displayData.model,
-          year:            displayData.year,
-          mileage:         displayData.mileage,
-          actual_price:    actual_price,
-          predicted_price: predicted_price,
-          listing_id:      displayData.listing_id ?? null,
-          country:         COUNTRY,
-        }),
-      })
-        .then(r => r.json())
-        .then(data => {
+      (async () => {
+        try {
+          const res = await fetch(`${API_URL}/similar-cars`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              make:            displayData.make,
+              model:           displayData.model,
+              year:            displayData.year,
+              mileage:         displayData.mileage,
+              actual_price:    actual_price,
+              predicted_price: predicted_price,
+              listing_id:      displayData.listing_id ?? null,
+              country:         COUNTRY,
+            }),
+          });
+          const data = await res.json();
           if (!data.similar || !data.similar.length) return;
+
+          // Live-check each URL in parallel — sold listings 404 or redirect away
+          const checks = await Promise.all(
+            data.similar.map(async (car) => {
+              try {
+                const r = await fetch(car.url, { method: "HEAD", redirect: "follow" });
+                // Active listings return 200 and stay on /aanbod/ path
+                return r.ok && r.url.includes("/aanbod/");
+              } catch {
+                return false;
+              }
+            })
+          );
+          // Keep only active listings (skip sold ones entirely)
+          const active = data.similar.filter((_, i) => checks[i]);
+          const toShow = active.slice(0, 3);
+          if (!toShow.length) {
+            // All candidates sold — don't render the section at all
+            return;
+          }
+
           const fmt = (n) => "€" + n.toLocaleString(LOCALE);
           const rankText = data.rank ? `#${data.rank} of ${data.total} similar listings by deal` : "";
           let html = `<div class="as24-similar">`;
           if (rankText) html += `<div class="as24-similar-rank">${rankText}</div>`;
           html += `<div class="as24-similar-list">`;
-          for (const car of data.similar.slice(0, 3)) {
+          for (const car of toShow) {
             const diffPct = car.diff_pct;
             const color = diffPct < -10 ? "#16a34a" : diffPct > 10 ? "#dc2626" : "#2563eb";
             html += `<a href="${car.url}" target="_blank" class="as24-similar-item">
@@ -416,8 +438,10 @@ function buildSidebar(carData, result, stats, detailCarData) {
           }
           html += `</div></div>`;
           similarWrap.innerHTML = html;
-        })
-        .catch(() => {});
+        } catch {
+          // silently fail
+        }
+      })();
     }
   }
 }

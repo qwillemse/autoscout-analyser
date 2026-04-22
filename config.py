@@ -41,6 +41,7 @@ PARAMS = {
     "fregfrom": 2005,     # exclude pre-2005 — collectibles, completely different market
     "pricefrom": 500,
     "priceto": 150000,    # raised from 75k — captures Porsche, AMG, M-series, RS etc.
+    "damaged_listing": "exclude",  # exclude damaged/accident listings (can't assess from specs)
     "sort": "standard",
     "desc": 0,
 }

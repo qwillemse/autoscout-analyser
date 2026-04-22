@@ -715,8 +715,10 @@ def similar_cars(request: Request, car: SimilarCarsInput):
     if rank is None:
         rank = sum(1 for s in similar if s["diff_pct"] < current_diff) + 1
 
-    # Return top 3 best deals (excluding current listing)
-    best_deals = [s for s in similar if s.get("id") != car.listing_id][:3]
+    # Return top 30 best deals (excluding current listing) — extension will
+    # live-check each URL in parallel and display up to 3 that are still active.
+    # Fetching 30 gives lots of headroom when DB is stale and many have sold.
+    best_deals = [s for s in similar if s.get("id") != car.listing_id][:30]
 
     return {
         "similar": best_deals,
