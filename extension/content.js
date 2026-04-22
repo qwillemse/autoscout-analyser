@@ -726,15 +726,3 @@ setInterval(() => {
     setTimeout(() => main(true), 500);
   }
 }, 500);
-
-// Watch for URL changes that don't trigger popstate (Next.js pushState)
-let _lastUrl = window.location.href;
-const _urlObserver = new MutationObserver(() => {
-  if (window.location.href !== _lastUrl) {
-    _lastUrl = window.location.href;
-    setTimeout(() => main(true), 500);
-  }
-});
-_urlObserver.observe(document.querySelector("head > title") || document.head, {
-  childList: true, subtree: true, characterData: true,
-});
