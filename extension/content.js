@@ -525,9 +525,15 @@ function extractSearchListings(preferSPA = false) {
 }
 
 // ── Inject badge into a search result card ────────────────────────────────────
-function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence, carData) {
+function injectBadge(id, predicted_price, diff_pct, final_verdict, confidence, carData, _attempt = 0) {
   const link = document.querySelector(`a[href*="${id}"]`);
-  if (!link) return;
+  if (!link) {
+    // Card not rendered yet — retry up to 8 times over ~4 seconds
+    if (_attempt < 8) {
+      setTimeout(() => injectBadge(id, predicted_price, diff_pct, final_verdict, confidence, carData, _attempt + 1), 500);
+    }
+    return;
+  }
   const card = link.closest("article") ?? link.closest("[data-testid]") ?? link.parentElement;
   if (!card || card.querySelector(".as24-badge")) return;
 
@@ -594,7 +600,14 @@ async function main(isSPA = false) {
     _lastSearchUrl = currentUrl;
 
     const listings = extractSearchListings(isSPA);
-    if (!listings.length) return;
+    if (!listings.length) {
+      // __NEXT_DATA__ or SPA cache not ready yet — retry once after a short delay
+      if (!isSPA) setTimeout(() => {
+        _lastSearchUrl = null;
+        main(false);
+      }, 800);
+      return;
+    }
     try {
       const results = await fetch(`${API_URL}/predict/batch`, {
         method: "POST",
