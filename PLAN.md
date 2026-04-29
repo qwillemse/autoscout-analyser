@@ -1,109 +1,84 @@
 # AutoScout24 Price Analyser — Plan
 
 **Status:** 52 installs, 6 active users, 2 reviews (5★)
-**Goal:** Reach 50-500 active users. Fix retention bugs, try new growth channels.
+**Model:** XGBoost, MAE €2,100, 670k listings (NL + DE + BE)
+**API:** Railway (`/data/` volume for pipeline.joblib, cars.db, range_lookup.json)
 
 ---
 
-## Week 1 — Fix retention bugs
+## ✅ Done recently
 
-These directly affect the 6 current users' experience. Must-fix before more promotion.
-
-### 1. Similar cars show sold / damaged cars
-**Problem:**
-- Even with 30-day DB purge, top 3 "best deals" often sold out (cars sell fast)
-- Damaged cars get high predicted price (damage not visible on search page) so they look like "great deals"
-
-**Fix:**
-- For top 3 similar cars, only show listings scraped in last **7 days** (not 30)
-- Add a `damaged_listing=exclude` filter to scraper URLs (AutoScout24 supports this — we're already using it for new scrapes, check older data)
-- Consider: skip cars with extreme negative diff_pct (e.g. <-50%) — almost always damaged or mispriced
-
-### 2. Badges don't load on first load
-**Problem:** Content script races with page load, misses `__NEXT_DATA__` sometimes
-
-**Fix:**
-- Add retry logic with MutationObserver — if no listings found, watch DOM and retry
-- Or increase initial delay / listen for `DOMContentLoaded` + 500ms
-
-### 3. Data freshness
-**Problem:** Scrape is manual, DB goes stale, similar cars become irrelevant
-
-**Fix:**
-- Set up a weekly automated scrape (cron on laptop, or GitHub Action)
-- Include all current countries (NL, DE, BE) + retry BE which failed last time
-- Consider: daily partial scrape (just new listings per make) instead of full weekly
+- Model-residual-based price ranges (per trim/make+model)
+- Live-check for similar cars (top 30 → filter sold → show up to 3 active)
+- Damaged listing filter in scraper (`damaged_listing=exclude`)
+- Badges retry on first page load (race conditions fixed)
+- pushState SPA nav detection (homepage → search)
+- Fixed duplicate `_lastUrl` that silently broke the whole content script
+- GitHub Action: weekly scrape + retrain + auto-upload to Railway
+- Scraper: request timeout (10s/30s) + 1 retry — prevents hung requests from eating the GH Actions budget
+- GH Action: parallelized per-country (NL/DE/BE matrix) — each gets its own 6h budget, then a final merge+retrain+upload job
+- Multi-country support (NL, DE, BE + manifest entries for AT/FR/IT/ES/LU)
 
 ---
 
-## Week 2 — Growth experiments
+## 🔄 In progress
 
-Social media didn't work with 2 posts. Try different channels and more volume.
-
-### 1. Get reviews from existing 6 users
-**How:**
-- Can't contact Chrome Web Store users directly
-- Instead: add a small "Enjoying this? Leave a review" link in the sidebar footer after a user has seen predictions for 5+ cars
-- Reviews matter most for Chrome Web Store SEO
-
-### 2. Dutch/German Facebook groups
-- "Occasions Nederland", "Auto's te koop", "Tweedehands auto's"
-- "Gebrauchtwagen kaufen", "Auto kaufen Deutschland"
-- Post same text as the forum draft — no karma requirements
-
-### 3. Car YouTubers (DM approach)
-- Dutch: Uncle of Trash, AutoVisie, AutoRAI, Auto Review
-- German: Matthias Malmedie, JP Performance (too big probably)
-- Smaller 10-50k subs creators more likely to respond
-- DM: "Hey, I built a free Chrome extension that checks used car prices on AutoScout24.
-  Trained on 670k listings. Thought you might find it interesting for one of your videos.
-  Free to use, no affiliation."
-
-### 4. More TikTok/Insta volume
-- Post 1 video per week minimum
-- Different angles:
-  - "I found a car 40% below market value"
-  - "POV: negotiating with a seller using AI data"
-  - "This dealer is overpricing by €8,000"
-- First 2 seconds matter most — hook before "here's what I built"
+- GitHub Action running manually (first test run) — should finish in ~2h
 
 ---
 
-## Future — only if growth kicks in
+## 📋 Next up
 
-### If 100+ users
-- Build a proper "price trend" feature (needs months of data)
-- Premium: LLM insight becomes paid, free users get just badges
-- Full scrape for AT/FR/IT/ES/LU
-- Add automated tests (XGBoost, API, extension)
+### Growth (top priority — product is solid, need users)
 
-### If 500+ users
-- Upgrade Railway to handle load
-- Start considering monetization seriously
-- Consider other platforms (mobile.de, marktplaats, etc.)
+1. **Get reviews from existing 6 users** ✅ — "Leave a review" prompt after 5 analyses implemented
+2. ~~**Dutch/German Facebook groups**~~ — blocked (Facebook account disabled)
+3. **More TikTok/Insta volume** — post 1+ per week
+   - Different angles: "Found a car 40% below market value", "Negotiating with AI", "This dealer overpriced by €8k"
+4. **Car YouTubers DM** — in progress
+   - Dutch: Uncle of Trash, AutoVisie, AutoRAI, Auto Review
+   - German: Matthias Malmedie, smaller 10-50k subs more likely to respond
+5. **Direct outreach** — friends car shopping, ask them to try + review
+6. **Add usage analytics** — deferred until ~100 users (not needed at current scale)
 
-### Not doing (feature creep)
-- Sell to AutoScout — they have their own system, no interest likely
+### Optional polish (if bored waiting)
+
+- Full scrape for AT / FR / IT / ES / LU once NL/DE/BE stable
+- Small UI: "Last updated X days ago" in sidebar footer
+
+---
+
+## 🧠 Future (when user count > 100)
+
+- Premium tier — gate LLM insight + similar cars ranking
+- Price alerts (when AutoScout's own isn't enough)
+- Equipment/description parsing for richer predictions (needs per-listing scrape)
+- Other marketplaces — mobile.de, marktplaats, AutoTrader UK
+
+### Not doing (feature creep / low ROI)
+
+- Sell to AutoScout — they have their own price check
 - Price history per listing — not useful for buyers
+- Owner count impact — niche
 - Flyers — terrible ROI for Chrome extensions
-- Owner count impact — niche feature
+- Multi-site right now — need to nail AutoScout first
 
 ---
 
-## Known bugs / tech debt
+## 🐛 Known bugs / tech debt
 
-- [ ] Similar cars show sold/damaged cars
-- [ ] Badges don't load on first page load sometimes
-- [ ] BE scrape failed (DNS issues) — never retried fully
-- [ ] DB has no duplicate check — should verify
-- [ ] Chrome Web Store description says 300k listings (actually 670k)
+- [ ] Chrome Web Store description still says "300,000+ listings" (now 670k)
+- [ ] Verify next weekly Action run completes (per-country parallel; each ≤6h budget, train-deploy joins after)
+- [ ] DB has no duplicate check — minor, but should verify once
+- [ ] No automated tests
 
 ---
 
-## Metrics to track weekly
+## 📊 Metrics to track weekly
 
 - Chrome Web Store installs (total + weekly delta)
 - Active users (installs minus uninstalls)
 - Reviews count + average rating
-- TikTok/Insta views
-- Railway API calls per day (hints at engagement)
+- TikTok / Instagram views per video
+- Railway daily API calls (proxy for engagement)
+- GitHub Action: did it run + MAE from train_results.json

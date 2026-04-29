@@ -8,9 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  scrape-train-deploy:
+  scrape:
+    strategy:
+      fail-fast: false
+      matrix:
+        country: [NL, DE, BE]
     runs-on: ubuntu-latest
-    # GitHub Actions free tier job limit is 6h — scraping + training fits
+    # Each country gets its own 6h budget (GH Actions free tier per-job cap)
     timeout-minutes: 350
 
     steps:
@@ -26,10 +30,52 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Scrape NL + DE + BE
-        run: python main.py --scrape --countries NL DE BE
+      - name: Scrape ${{ matrix.country }}
+        run: python main.py --scrape --countries ${{ matrix.country }}
         env:
           DB_PATH: ./cars.db
+
+      - name: Upload DB shard
+        uses: actions/upload-artifact@v4
+        with:
+          name: cars-${{ matrix.country }}
+          path: cars.db
+          retention-days: 1
+
+  train-deploy:
+    needs: scrape
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download all DB shards
+        uses: actions/download-artifact@v4
+        with:
+          path: shards/
+          pattern: cars-*
+
+      - name: Merge shards into cars.db
+        run: |
+          rm -f cars.db
+          FIRST=$(ls shards/cars-*/cars.db | head -1)
+          cp "$FIRST" cars.db
+          for shard in shards/cars-*/cars.db; do
+            if [ "$shard" = "$FIRST" ]; then continue; fi
+            sqlite3 cars.db "ATTACH DATABASE '$shard' AS s; INSERT OR REPLACE INTO listings SELECT * FROM s.listings; DETACH DATABASE s;"
+          done
+          echo "Merged total: $(sqlite3 cars.db 'SELECT COUNT(*) FROM listings;') listings"
 
       - name: Retrain model
         run: python train.py

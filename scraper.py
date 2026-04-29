@@ -1,11 +1,25 @@
 import json
 import re
+import time
 
 from bs4 import BeautifulSoup
 import requests
 
 from config import PARAMS, HEADERS
 from countries import get_country_config
+
+
+def _get_with_retry(url: str, params: dict, attempts: int = 2, timeout=(10, 30)):
+    """GET with connect/read timeout + one retry. Returns Response or None on persistent failure."""
+    for attempt in range(attempts):
+        try:
+            return requests.get(url, headers=HEADERS, params=params, timeout=timeout)
+        except requests.RequestException as e:
+            if attempt + 1 < attempts:
+                time.sleep(2)
+                continue
+            print(f"  request failed after {attempts} attempts: {url} – {e}")
+            return None
 
 # ── Normalize fuel/transmission across languages ─────────────────────────────
 FUEL_MAP = {
@@ -57,7 +71,9 @@ def scrape_page(make: str, page: int, country: str = "NL",
         params["fregfrom"] = year_from
     if year_to:
         params["fregto"] = year_to
-    r = requests.get(url, headers=HEADERS, params=params)
+    r = _get_with_retry(url, params)
+    if r is None:
+        return []
     soup = BeautifulSoup(r.text, "html.parser")
 
     # AutoScout24 puts listing data in a __NEXT_DATA__ JSON blob
