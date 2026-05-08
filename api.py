@@ -764,3 +764,27 @@ async def upload_file(
 
     size_mb = os.path.getsize(dest) / (1024 * 1024)
     return {"status": "ok", "file": filename, "size_mb": round(size_mb, 1), "path": dest}
+
+
+# ── Mirror download endpoint ─────────────────────────────────────────────────
+# Lets the resell dashboard (and any other client with the secret) pull the
+# weekly-retrained artifacts back from Railway. Same bearer-token guard as the
+# upload endpoint; same allowlist of files.
+from fastapi.responses import FileResponse
+
+
+@app.get("/download/{filename}")
+def download_file(filename: str, authorization: str = Header(None)):
+    if not UPLOAD_SECRET or authorization != f"Bearer {UPLOAD_SECRET}":
+        raise HTTPException(status_code=403, detail="Invalid or missing UPLOAD_SECRET")
+
+    range_path = os.path.join(os.path.dirname(MODEL_PATH), "range_lookup.json")
+    allowed = {"cars.db": DB_PATH, "pipeline.joblib": MODEL_PATH, "range_lookup.json": range_path}
+    if filename not in allowed:
+        raise HTTPException(status_code=400, detail=f"Only {list(allowed.keys())} allowed")
+
+    src = allowed[filename]
+    if not os.path.exists(src):
+        raise HTTPException(status_code=404, detail=f"{filename} not on server yet")
+
+    return FileResponse(src, filename=filename, media_type="application/octet-stream")

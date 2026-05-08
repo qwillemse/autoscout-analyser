@@ -13,6 +13,10 @@ NEW_COLUMNS = [
     ("body_type",     "TEXT"),
     ("colour",        "TEXT"),
     ("country",       "TEXT DEFAULT 'NL'"),
+    # Lifecycle tracking for the resell dashboard. first_seen is set on initial
+    # INSERT and never updated; last_seen refreshes on every upsert.
+    ("first_seen",    "TEXT"),
+    ("last_seen",     "TEXT"),
 ]
 
 
@@ -39,6 +43,10 @@ def init_db():
             con.execute(f"ALTER TABLE listings ADD COLUMN {col} {typedef}")
         except sqlite3.OperationalError:
             pass  # column already exists
+    # Backfill first_seen/last_seen from scraped_at for rows added before the
+    # lifecycle columns existed. Idempotent; only fills NULLs.
+    con.execute("UPDATE listings SET first_seen = scraped_at WHERE first_seen IS NULL")
+    con.execute("UPDATE listings SET last_seen  = scraped_at WHERE last_seen  IS NULL")
     con.commit()
     return con
 
@@ -85,16 +93,16 @@ def track_price_changes(con, listings):
 
 
 def save(con, listings):
-    """Insert new listings and update price + scraped_at for existing ones."""
+    """Insert new listings and update price + last_seen for existing ones."""
     con.executemany("""
         INSERT INTO listings
             (id, make, model, year, mileage, fuel, transmission, price, location,
              power_kw, seller_type, trim_id, range_km, variant_id, generation_id,
-             body_type, colour, country, scraped_at)
+             body_type, colour, country, scraped_at, first_seen, last_seen)
         VALUES
             (:id, :make, :model, :year, :mileage, :fuel, :transmission, :price, :location,
              :power_kw, :seller_type, :trim_id, :range_km, :variant_id, :generation_id,
-             :body_type, :colour, :country, datetime('now'))
+             :body_type, :colour, :country, datetime('now'), datetime('now'), datetime('now'))
         ON CONFLICT(id) DO UPDATE SET
             price         = excluded.price,
             mileage       = excluded.mileage,
@@ -106,13 +114,19 @@ def save(con, listings):
             body_type     = excluded.body_type,
             colour        = excluded.colour,
             country       = excluded.country,
-            scraped_at    = excluded.scraped_at
+            scraped_at    = excluded.scraped_at,
+            last_seen     = excluded.last_seen
     """, listings)
     con.commit()
 
 
-def purge_stale(con):
-    """Remove listings not seen in the last STALE_DAYS days (likely sold)."""
+def purge_stale_legacy(con):
+    """DEPRECATED: kept for back-compat but no longer called from main.py.
+
+    The resell dashboard relies on first_seen / last_seen to track listing
+    lifecycles, so we no longer delete stale rows. Disk cost is trivial (~140MB
+    for 676k listings) and growth is bounded by the live AutoScout market.
+    """
     cur = con.execute(f"""
         DELETE FROM listings
         WHERE scraped_at < datetime('now', '-{STALE_DAYS} days')

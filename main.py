@@ -3,7 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from config import MAKES, YEAR_BANDS
 from countries import ALL_COUNTRY_CODES
-from db import init_db, save, track_price_changes, purge_stale
+from db import init_db, save, track_price_changes
 from scraper import scrape_page
 from train import retrain
 
@@ -71,9 +71,9 @@ if __name__ == "__main__":
     elif args.scrape:
         con = init_db()
         scrape_all(con, args.countries, args.pages)
-        purge_stale(con)
+        # Stale purge removed: lifecycle history retained for resell dashboard
+        # (see db.first_seen / db.last_seen).
     else:
         con = init_db()
         scrape_all(con, args.countries, args.pages)
-        purge_stale(con)
         retrain()
