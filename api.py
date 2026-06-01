@@ -492,6 +492,12 @@ Only start with "⚠️ Warning:" if there is a GENUINE concern like: replaced o
 
 {"Reference specific details from the listing description or equipment where relevant. Mention notable issues (known defects, missing maintenance) and positives (full service history, new parts)." if listing_details else ""} Be direct and helpful — this is for a car buyer. Write in English."""
 
+    # Kill-switch: set LLM_DISABLED=1 on Railway to instantly disable /explain
+    # without removing the API key. Useful when burning down quota.
+    if os.environ.get("LLM_DISABLED") == "1":
+        return {"explanation": None, "error": "disabled",
+                "message": "AI overview is temporarily disabled."}
+
     try:
         client = get_openai()
         response = client.chat.completions.create(
@@ -503,7 +509,20 @@ Only start with "⚠️ Warning:" if there is a GENUINE concern like: replaced o
         explanation = response.choices[0].message.content.strip()
         return {"explanation": explanation}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"LLM service error: {str(e)}")
+        # Graceful fallback so the extension can render a useful message instead
+        # of a mysterious 502. Common failure: OpenAI quota exhausted.
+        msg = str(e)
+        if "insufficient_quota" in msg or "exceeded your current quota" in msg:
+            reason = "quota"
+            user_msg = "AI overview is temporarily unavailable (billing)."
+        elif "rate_limit" in msg.lower() or "429" in msg:
+            reason = "rate_limit"
+            user_msg = "AI overview is rate-limited, try again in a minute."
+        else:
+            reason = "error"
+            user_msg = "AI overview is temporarily unavailable."
+        return {"explanation": None, "error": reason, "message": user_msg,
+                "detail": msg[:200]}
 
 
 # ── Detailed prediction endpoint (premium) ───────────────────────────────────

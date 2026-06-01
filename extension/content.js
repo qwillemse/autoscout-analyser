@@ -365,6 +365,16 @@ function buildSidebar(carData, result, stats, detailCarData) {
       })
         .then(r => r.json())
         .then(data => {
+          // Backend may return a graceful fallback: {explanation: null, message: "..."}
+          // when OpenAI is unavailable (quota, rate limit, disabled).
+          if (!data.explanation) {
+            if (data.message) {
+              wrap.innerHTML = `<div class="as24-explanation as24-explanation--muted">${data.message}</div>`;
+            } else {
+              wrap.innerHTML = "";
+            }
+            return;
+          }
           wrap.innerHTML = `<div class="as24-explanation" id="as24-explanation-text">✨ ${data.explanation}</div>`;
           const toggle = document.getElementById("as24-explanation-toggle");
           if (toggle) {
