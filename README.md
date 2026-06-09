@@ -1,7 +1,9 @@
 # AutoScout24 Price Analyser
 
 > See instantly if a car on AutoScout24 is a good deal.
-> An end-to-end ML pipeline — scraper → SQLite → XGBoost → FastAPI → Chrome extension — trained weekly on **700,000+ listings** across NL, DE, and BE.
+> An end-to-end ML pipeline — scraper → SQLite → XGBoost → FastAPI → Chrome extension — retrained weekly on **730,000+ listings** across NL, DE, and BE.
+>
+> 🔗 Companion project: [**qwillemse/resell**](https://github.com/qwillemse/resell) — a local dashboard that ranks live listings by flip profitability, using this repo's model + scrape DB.
 
 ![promo](store-assets/promo-marquee-1400x560.png)
 
@@ -23,8 +25,11 @@ When you browse [autoscout24.nl](https://www.autoscout24.nl/), [.de](https://www
 
 ## Results
 
+Numbers below are from the model's published training results — the weekly retrain refreshes them automatically.
+
 | Metric | Value |
 |---|---|
+| Listings in DB | **730,000+** (grows weekly) |
 | Listings in training set | **700,215** (after cleaning) |
 | Mean Absolute Error | **€2,125** |
 | Mean Absolute Percentage Error | **10.26%** |
@@ -68,13 +73,16 @@ Walks AutoScout24's `__NEXT_DATA__` JSON across configured makes × year-bands �
 - `POST /predict` — single car prediction with verdict + confidence
 - `POST /predict/batch` — batch up to 30 cards on a search page in one request
 - `POST /similar-cars` — finds and re-ranks comparable listings, returns top 30 by diff%
-- `POST /explain` — GPT-4o-mini call with country-specific market context + listing details
+- `POST /explain` — GPT-4o-mini call with country-specific market context + listing details. Returns a graceful `{explanation: null, message: "..."}` fallback (200) when OpenAI is unavailable, so the extension can render a useful status instead of nothing.
+- `GET /download/{filename}` — bearer-token-protected mirror of the upload endpoint. Lets sibling tools (the resell dashboard) pull the weekly-retrained `cars.db` / `pipeline.joblib` / `range_lookup.json` back from Railway.
 
 **Extension** ([extension/](extension/)) — Chrome MV3
 - `injected.js` runs in MAIN world to capture AutoScout's Next.js page data before render
 - `content.js` reads the captured data, batches predict calls, injects badges
 - pushState SPA navigation handling so badges re-render on in-place URL changes
 - Multi-country detail-path matching (`/aanbod/`, `/angebote/`, `/annonce/`, `/anuncio/`, …)
+
+**Data lifecycle.** Listings carry `first_seen` (set on initial INSERT, never updated) and `last_seen` (refreshed on every upsert) columns. The 30-day stale-purge was removed so the full listing history is preserved — that history is what the companion [resell](https://github.com/qwillemse/resell) project will eventually use to model time-to-sell.
 
 ## Tech stack
 
