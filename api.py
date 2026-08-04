@@ -291,7 +291,16 @@ def privacy():
 # ── Health check (always returns 200 so Railway can start) ────────────────────
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    import shutil as _shutil
+    try:
+        du = _shutil.disk_usage(os.path.dirname(DB_PATH) or ".")
+        return {
+            "status": "ok",
+            "disk_free_mb": round(du.free / 1e6, 1),
+            "disk_total_mb": round(du.total / 1e6, 1),
+        }
+    except OSError:
+        return {"status": "ok"}
 
 
 # ── Stats endpoint ────────────────────────────────────────────────────────────
@@ -755,6 +764,37 @@ import shutil
 
 UPLOAD_SECRET = os.environ.get("UPLOAD_SECRET", "")
 
+_RANGE_PATH = os.path.join(os.path.dirname(MODEL_PATH), "range_lookup.json")
+ALLOWED_UPLOADS = {"cars.db": DB_PATH, "pipeline.joblib": MODEL_PATH, "range_lookup.json": _RANGE_PATH}
+
+
+@app.on_event("startup")
+def _cleanup_stale_uploads():
+    # Volume ran out mid-write once, leaving a partial cars.db.tmp squatting on
+    # the volume forever. Purge orphans on boot so a bad deploy self-heals.
+    for path in ALLOWED_UPLOADS.values():
+        stale_tmp = path + ".tmp"
+        if os.path.exists(stale_tmp):
+            print(f"[startup] Removing stale {stale_tmp} ({os.path.getsize(stale_tmp)/1e6:.1f} MB)")
+            try:
+                os.remove(stale_tmp)
+            except OSError as e:
+                print(f"[startup] Failed to remove {stale_tmp}: {e}")
+        stale_old = path + ".old"
+        if os.path.exists(stale_old):
+            if os.path.exists(path):
+                try:
+                    os.remove(stale_old)
+                except OSError as e:
+                    print(f"[startup] Failed to remove {stale_old}: {e}")
+            else:
+                print(f"[startup] Restoring {path} from {stale_old}")
+                try:
+                    os.replace(stale_old, path)
+                except OSError as e:
+                    print(f"[startup] Failed to restore from {stale_old}: {e}")
+
+
 @app.post("/upload/{filename}")
 async def upload_file(
     filename: str,
@@ -764,19 +804,34 @@ async def upload_file(
     if not UPLOAD_SECRET or authorization != f"Bearer {UPLOAD_SECRET}":
         raise HTTPException(status_code=403, detail="Invalid or missing UPLOAD_SECRET")
 
-    range_path = os.path.join(os.path.dirname(MODEL_PATH), "range_lookup.json")
-    allowed = {"cars.db": DB_PATH, "pipeline.joblib": MODEL_PATH, "range_lookup.json": range_path}
-    if filename not in allowed:
-        raise HTTPException(status_code=400, detail=f"Only {list(allowed.keys())} allowed")
+    if filename not in ALLOWED_UPLOADS:
+        raise HTTPException(status_code=400, detail=f"Only {list(ALLOWED_UPLOADS.keys())} allowed")
 
-    dest = allowed[filename]
-    # Write to a temp file first, then move atomically
-    tmp = dest + ".tmp"
-    with open(tmp, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    os.replace(tmp, dest)
+    dest = ALLOWED_UPLOADS[filename]
+    backup = dest + ".old"
 
-    # Reload model if pipeline was updated
+    # Rename-aside instead of tmp-then-replace: rename is a free metadata op,
+    # so peak volume usage is 1× file size instead of 2×.
+    if os.path.exists(dest):
+        os.replace(dest, backup)
+
+    try:
+        with open(dest, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    except OSError as e:
+        # Roll back so we don't leave the server without cars.db / pipeline.joblib.
+        if os.path.exists(dest):
+            try:
+                os.remove(dest)
+            except OSError:
+                pass
+        if os.path.exists(backup):
+            os.replace(backup, dest)
+        raise HTTPException(status_code=507, detail=f"Write failed: {e}")
+
+    if os.path.exists(backup):
+        os.remove(backup)
+
     if filename == "pipeline.joblib":
         global _pipeline
         _pipeline = None  # force reload on next request
