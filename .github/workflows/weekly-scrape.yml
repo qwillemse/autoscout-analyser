@@ -40,7 +40,7 @@ jobs:
         with:
           name: cars-${{ matrix.country }}
           path: cars.db
-          retention-days: 1
+          retention-days: 7
 
   train-deploy:
     needs: scrape

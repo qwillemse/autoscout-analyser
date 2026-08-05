@@ -810,16 +810,28 @@ async def upload_file(
     dest = ALLOWED_UPLOADS[filename]
     backup = dest + ".old"
 
-    # Rename-aside instead of tmp-then-replace: rename is a free metadata op,
-    # so peak volume usage is 1× file size instead of 2×.
-    if os.path.exists(dest):
-        os.replace(dest, backup)
+    # Rename-aside gives rollback-on-failure but needs 2× peak headroom.
+    # When the volume is too tight for that, fall back to delete-first (1×
+    # peak, no rollback). Source of truth is the weekly GH Actions run, so
+    # a mid-write failure just means re-run the workflow.
+    du = shutil.disk_usage(os.path.dirname(dest) or ".")
+    old_size = os.path.getsize(dest) if os.path.exists(dest) else 0
+    # Estimate incoming size as 1.2× old (allow for weekly growth), floor 100 MB.
+    est_new = max(int(old_size * 1.2), 100 * 1024 * 1024)
+    safety_margin = 50 * 1024 * 1024
+    can_rollback = old_size > 0 and du.free >= est_new + safety_margin
+
+    if old_size > 0:
+        if can_rollback:
+            os.replace(dest, backup)
+        else:
+            print(f"[upload] Tight volume ({du.free/1e6:.0f} MB free, ~{est_new/1e6:.0f} MB incoming) — delete-first, no rollback.")
+            os.remove(dest)
 
     try:
         with open(dest, "wb") as f:
             shutil.copyfileobj(file.file, f)
     except OSError as e:
-        # Roll back so we don't leave the server without cars.db / pipeline.joblib.
         if os.path.exists(dest):
             try:
                 os.remove(dest)
