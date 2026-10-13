@@ -310,7 +310,10 @@ def stats():
         con = sqlite3.connect(DB_PATH)
         count = con.execute("SELECT COUNT(*) FROM listings").fetchone()[0]
         con.close()
-        return {"listing_count": count, "status": "ok"}
+        # cars.db mtime = when the last weekly upload landed. Good enough proxy
+        # for "data freshness" to show in the extension footer.
+        age_days = int((datetime.now().timestamp() - os.path.getmtime(DB_PATH)) // 86400)
+        return {"listing_count": count, "last_updated_days": age_days, "status": "ok"}
     except Exception:
         return {"listing_count": 0, "status": "db_not_loaded"}
 

@@ -291,7 +291,10 @@ function buildSidebar(carData, result, stats, detailCarData) {
       <div>${displayData.fuel} · ${displayData.transmission}</div>
     </div>
     <div id="as24-review-prompt-wrap"></div>
-    <div class="as24-footer">Based on ${stats ? stats.listing_count.toLocaleString(LOCALE) : "~12k"} listings</div>
+    <div class="as24-footer">
+      Based on ${stats ? stats.listing_count.toLocaleString(LOCALE) : "~12k"} listings
+      ${stats && typeof stats.last_updated_days === "number" ? `<br>Updated ${stats.last_updated_days === 0 ? "today" : stats.last_updated_days === 1 ? "yesterday" : stats.last_updated_days + " days ago"}` : ""}
+    </div>
   `;
 
   document.body.appendChild(sidebar);

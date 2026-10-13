@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AutoScout24 Price Analyser",
-  "version": "1.2",
+  "version": "1.3",
   "description": "See instantly if a car on AutoScout24 is a good deal. AI-powered market value, price range & deal rating on every listing.",
   "icons": {
     "16":  "icons/icon16.png",
